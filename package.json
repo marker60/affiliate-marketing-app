@@ -77,3 +77,11 @@
     "typescript": "^5"
   }
 }
+"scripts": {
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint",
+  "type-check": "tsc --noEmit",
+  "postinstall": "npx playwright install chromium --with-deps"
+}
