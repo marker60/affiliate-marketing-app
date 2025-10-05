@@ -30,28 +30,21 @@ export default async function NewPage() {
     const description = String(formData.get("description") || "").trim()
     if (!name) redirect("/new?error=missing_name")
 
-    const { data, error } = await supabase
-      .from("projects")
-// after getting `user`:
+      // 1) Get the user FIRST
+const { data: userData } = await supabase.auth.getUser();
+const user = userData?.user;
 if (!user) {
-  // choose ONE of these:
-  // A) If this is a server action:
-  //   import { redirect } from "next/navigation";
-  //   redirect("/auth/login");
-
-  // B) If this runs in a client component/handler:
-  //   router.push("/auth/login"); return;
-
-  // C) Minimal safe fallback (works anywhere):
-  throw new Error("Not authenticated");
+  throw new Error("Not authenticated"); // or redirect("/auth/login")
 }
-
-// From here on, TypeScript knows `user` is non-null
 const userId = user.id;
 
-      .insert({ name, description, user_id: user.id })
-      .select("id")
-      .single()
+// 2) Then run the insert (note: userId, not user.id)
+const { data, error } = await supabase
+  .from("projects")
+  .insert({ name, description, user_id: userId })
+  .select("id")
+  .single();
+
 
     if (error || !data) redirect("/new?error=save_failed")
     redirect(`/brief/${data.id}`)
