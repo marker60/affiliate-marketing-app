@@ -1,31 +1,40 @@
 // lib/supabase/middleware.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-/** Edge-safe: refreshes Supabase session cookies on each request */
+/** Edge-safe: refresh Supabase session cookies in middleware */
 export async function updateSession(request: NextRequest) {
-  const response = NextResponse.next();
+  // Start with the current request context
+  let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, // or PUBLISHABLE key if you use that
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        // Required in @supabase/ssr for Edge/middleware
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: Parameters<typeof response.cookies.set>[1]) {
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: Parameters<typeof response.cookies.set>[1]) {
-          response.cookies.set({ name, value: "", ...options });
+        setAll(cookiesToSet) {
+          // Update the incoming request cookies (for this run)
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+          });
+
+          // Create a fresh response that carries the updated cookies out
+          supabaseResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) => {
+            supabaseResponse.cookies.set(name, value, options);
+          });
         },
       },
     }
   );
 
-  // Touch the auth endpoint to refresh session on the edge
+  // Touch auth to ensure session refresh on each request (Edge-safe)
   await supabase.auth.getUser();
 
-  return response;
+  // IMPORTANT: return the supabaseResponse we mutated above
+  return supabaseResponse;
 }
