@@ -6,6 +6,8 @@ export default async function NewPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+
+
   if (!user) {
     return (
       <main className="flex min-h-svh items-center justify-center p-8">
@@ -30,6 +32,23 @@ export default async function NewPage() {
 
     const { data, error } = await supabase
       .from("projects")
+// after getting `user`:
+if (!user) {
+  // choose ONE of these:
+  // A) If this is a server action:
+  //   import { redirect } from "next/navigation";
+  //   redirect("/auth/login");
+
+  // B) If this runs in a client component/handler:
+  //   router.push("/auth/login"); return;
+
+  // C) Minimal safe fallback (works anywhere):
+  throw new Error("Not authenticated");
+}
+
+// From here on, TypeScript knows `user` is non-null
+const userId = user.id;
+
       .insert({ name, description, user_id: user.id })
       .select("id")
       .single()
