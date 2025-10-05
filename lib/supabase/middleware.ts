@@ -1,62 +1,31 @@
-import { createServerClient } from "@supabase/ssr"
-import { NextResponse, type NextRequest } from "next/server"
+// lib/supabase/middleware.ts
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
+/** Edge-safe: refreshes Supabase session cookies on each request */
 export async function updateSession(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const response = NextResponse.next();
 
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith("http")) {
-    console.error("[v0] Missing or invalid Supabase environment variables in middleware")
-    console.error("[v0] NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "set but invalid" : "not set")
-    console.error("[v0] NEXT_PUBLIC_SUPABASE_ANON_KEY:", supabaseAnonKey ? "set" : "not set")
-
-    // Allow public routes to work without Supabase
-    if (request.nextUrl.pathname === "/" || request.nextUrl.pathname === "/new") {
-      return NextResponse.next({
-        request,
-      })
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: Parameters<typeof response.cookies.set>[1]) {
+          response.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: Parameters<typeof response.cookies.set>[1]) {
+          response.cookies.set({ name, value: "", ...options });
+        },
+      },
     }
+  );
 
-    // Redirect to home for protected routes when Supabase is not configured
-    const url = request.nextUrl.clone()
-    url.pathname = "/"
-    return NextResponse.redirect(url)
-  }
+  // Touch the auth endpoint to refresh session on the edge
+  await supabase.auth.getUser();
 
-  let supabaseResponse = NextResponse.next({
-    request,
-  })
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll()
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-        supabaseResponse = NextResponse.next({
-          request,
-        })
-        cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
-      },
-    },
-  })
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Redirect to login if not authenticated and trying to access protected routes
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith("/auth") &&
-    request.nextUrl.pathname !== "/" &&
-    request.nextUrl.pathname !== "/new"
-  ) {
-    const url = request.nextUrl.clone()
-    url.pathname = "/auth/login"
-    return NextResponse.redirect(url)
-  }
-
-  return supabaseResponse
+  return response;
 }
