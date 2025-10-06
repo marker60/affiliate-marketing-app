@@ -1,7 +1,5 @@
-/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* your custom global styles (optional) */
 html, body { min-height: 100%; }
