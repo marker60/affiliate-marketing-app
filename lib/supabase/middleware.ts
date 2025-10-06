@@ -4,27 +4,26 @@ import { createServerClient } from "@supabase/ssr";
 
 /** Edge-safe: refresh Supabase session cookies in middleware */
 export async function updateSession(request: NextRequest) {
-  // Start with the current request context
+  // Start with current request context
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, // or PUBLISHABLE key if you use that
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        // Required in @supabase/ssr for Edge/middleware
+        // Required shape on Edge/middleware
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
-          // Update the incoming request cookies (for this run)
-          cookiesToSet.forEach(({ name, value, options }) => {
+        setAll(cookies) {
+          // mutate request cookies for this execution
+          cookies.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
-
-          // Create a fresh response that carries the updated cookies out
+          // create fresh response + set outgoing cookies
           supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookies.forEach(({ name, value, options }) => {
             supabaseResponse.cookies.set(name, value, options);
           });
         },
@@ -32,9 +31,8 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Touch auth to ensure session refresh on each request (Edge-safe)
+  // Touch auth to refresh session cookies
   await supabase.auth.getUser();
 
-  // IMPORTANT: return the supabaseResponse we mutated above
   return supabaseResponse;
 }

@@ -40,17 +40,14 @@ export default async function NewPage() {
     const description = String(formData.get("description") || "").trim();
     if (!name) redirect("/new?error=missing_name");
 
-    // Get the user and guard against null
     const { data: userData } = await supabase.auth.getUser();
     const currentUser = userData?.user;
     if (!currentUser) {
-      // You could redirect to login instead if preferred:
-      // redirect("/auth/login");
+      // or: redirect("/auth/login")
       throw new Error("Not authenticated");
     }
     const userId = currentUser.id;
 
-    // Insert wrapped in try/catch for a cleaner failure path
     try {
       const { data, error } = await supabase
         .from("projects")
@@ -58,10 +55,7 @@ export default async function NewPage() {
         .select("id")
         .single();
 
-      if (error || !data) {
-        redirect("/new?error=save_failed");
-      }
-
+      if (error || !data) redirect("/new?error=save_failed");
       redirect(`/brief/${data.id}`);
     } catch {
       redirect("/new?error=save_failed");
@@ -72,7 +66,6 @@ export default async function NewPage() {
     <main className="flex min-h-svh items-center justify-center p-8">
       <form action={createProject} className="max-w-md w-full space-y-4">
         <h1 className="text-2xl font-bold">New Project</h1>
-
         <label className="block">
           <span className="text-sm">Name</span>
           <input
@@ -82,7 +75,6 @@ export default async function NewPage() {
             required
           />
         </label>
-
         <label className="block">
           <span className="text-sm">Description</span>
           <textarea
@@ -92,7 +84,6 @@ export default async function NewPage() {
             placeholder="Optional"
           />
         </label>
-
         <button
           type="submit"
           className="px-4 py-2 rounded bg-primary text-primary-foreground"

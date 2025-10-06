@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { chromium } from "playwright";
+import * as cheerio from "cheerio";
 
 type Scrape = {
   url: string;
@@ -14,40 +14,52 @@ type Scrape = {
   price?: string;
 };
 
-async function scrape(raw: string): Promise<Scrape> {
-  // Ensure a valid URL
-  const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+function normalizeUrl(raw: string) {
+  const s = raw.trim();
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
 
-  // Launch Chromium with flags that work on Vercel
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+async function scrape(rawUrl: string): Promise<Scrape> {
+  const url = normalizeUrl(rawUrl);
+
+  // Fetch the HTML (server-side)
+  const res = await fetch(url, {
+    headers: {
+      // helps some sites return richer HTML
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    },
+    // some sites block caching; we don't want stale content anyway
+    cache: "no-store",
   });
-  const page = await browser.newPage();
+  if (!res.ok) throw new Error(`fetch_failed_${res.status}`);
 
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  const html = await res.text();
+  const $ = cheerio.load(html);
 
-  const title = (await page.title())?.trim();
+  const title =
+    $('meta[property="og:title"]').attr("content") ||
+    $('meta[name="twitter:title"]').attr("content") ||
+    $("title").first().text() ||
+    undefined;
 
   const desc =
-    (await page
-      .locator(
-        "meta[name=description],meta[property='og:description'],meta[name='twitter:description']"
-      )
-      .first()
-      .getAttribute("content")
-      .catch(() => null)) || undefined;
+    $('meta[name="description"]').attr("content") ||
+    $('meta[property="og:description"]').attr("content") ||
+    $('meta[name="twitter:description"]').attr("content") ||
+    undefined;
 
-  const bullets = (await page.locator("li").allTextContents())
-    .map((t) => t.trim())
+  // Grab up to 10 reasonable bullet-ish lines
+  const bullets = $("li")
+    .map((_, el) => $(el).text().trim().replace(/\s+/g, " "))
+    .get()
     .filter(Boolean)
     .slice(0, 10);
 
-  const priceMatch = (await page.content()).match(
-    /\$\s*\d{1,3}(?:[,\d]{0,3})?(?:\.\d{2})?/
-  );
-
-  await browser.close();
+  // Naive price extractor ($12.34 or $1,234.00)
+  const priceMatch = html.match(/\$\s*\d{1,3}(?:[,\d]{3})*(?:\.\d{2})?/);
 
   return { url, title, desc, bullets, price: priceMatch?.[0] };
 }
@@ -76,15 +88,14 @@ Bullets: ${s.bullets.join(" | ")}
     }),
   });
 
-  if (!r.ok) throw new Error("openai_failed");
-
+  if (!r.ok) throw new Error(`openai_failed_${r.status}`);
   const j = await r.json();
-  let content = j.choices?.[0]?.message?.content ?? "{}";
-  const t = content.trim();
 
-  // Strip ```json fences if present
-  if (t.startsWith("```")) {
-    const parts = t.split("```");
+  let content = j.choices?.[0]?.message?.content ?? "{}";
+  const trimmed = content.trim();
+  if (trimmed.startsWith("```")) {
+    // strip ```json fences if present
+    const parts = trimmed.split("```");
     content = parts.length >= 3 ? parts[1].replace(/^json\n/i, "") : parts[0];
   }
 
@@ -116,7 +127,9 @@ Bullets: ${s.bullets.join(" | ")}
     seoText = `${t}${d}${k}`.trim();
   }
 
-  const brief = `SEO Brief:\n${seoText}\n\nOutline:\n${(obj.outline_h2 || []).join("\n")}`;
+  const brief = `SEO Brief:\n${seoText}\n\nOutline:\n${(obj.outline_h2 || []).join(
+    "\n"
+  )}`;
   const draft = `${
     obj.ftc_disclosure || "Disclosure: This page uses affiliate links."
   }
@@ -136,10 +149,9 @@ Key FAQ:
 
 export async function POST(req: Request) {
   try {
-    // Server-side Supabase client (service role stays on server — never expose to client)
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.SUPABASE_SERVICE_ROLE_KEY! // server-only
     );
 
     const form = await req.formData();
@@ -153,19 +165,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify owner (optional safety)
-    const { data: owner } = await supabase
-      .from("projects")
-      .select("user_id")
-      .eq("id", projectId)
-      .single();
-    const uid = owner?.user_id || null;
-
-    // Scrape + brief
     const s = await scrape(productUrl);
     const { brief, draft, title, raw } = await aiBrief(s);
 
-    // Upsert the latest page for this project
+    // upsert the latest page for this project
     const sel = await supabase
       .from("pages")
       .select("id")
@@ -188,7 +191,6 @@ export async function POST(req: Request) {
       brief,
       draft,
       ai_json: raw,
-      user_id: uid,
     };
 
     const resp = sel.data?.id
