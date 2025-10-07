@@ -68,9 +68,11 @@ export default function DevPage() {
      {/* Carousel */}
 <section className="space-y-2">
   <h2 className="font-medium">Carousel</h2>
-  <Carousel className="w-full max-w-xl">
+  <Carousel className="w-full max-w-none">
+
     {[1, 2, 3].map((n) => (
-      <CarouselItem key={n} className="basis-3/4">
+      <CarouselItem key={n} className="basis-full">
+
         <div className="rounded-lg border p-10 text-center">
           Slide {n}
         </div>
