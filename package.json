@@ -54,7 +54,8 @@
     "recharts": "^2.10.4",
     "remark-gfm": "^4.0.0",
     "sonner": "^1.5.0",
-    "tailwind-merge": "^2.2.1"
+    "tailwind-merge": "^2.2.1",
+    "vaul": "^1.1.2"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",
