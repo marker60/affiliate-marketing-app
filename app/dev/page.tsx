@@ -9,7 +9,8 @@ import { Drawer } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel"
+import { Carousel, CarouselItem } from "@/components/ui/carousel"
+
 
 export default function DevPage() {
   const [open, setOpen] = React.useState(false)
@@ -63,21 +64,19 @@ export default function DevPage() {
         <DayPicker mode="single" />
       </section>
 
-      {/* Carousel */}
-      <section className="space-y-2">
-        <h2 className="font-medium">Carousel</h2>
-        <Carousel className="w-full max-w-xl">
-          <CarouselContent>
-            {[1,2,3].map((n) => (
-              <CarouselItem key={n} className="basis-3/4">
-                <div className="rounded-lg border p-10 text-center">Slide {n}</div>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-          <CarouselPrevious />
-          <CarouselNext />
-        </Carousel>
-      </section>
+     {/* Carousel */}
+<section className="space-y-2">
+  <h2 className="font-medium">Carousel</h2>
+  <Carousel className="w-full max-w-xl">
+    {[1, 2, 3].map((n) => (
+      <CarouselItem key={n} className="basis-3/4">
+        <div className="rounded-lg border p-10 text-center">
+          Slide {n}
+        </div>
+      </CarouselItem>
+    ))}
+  </Carousel>
+</section>
     </main>
   )
 }
