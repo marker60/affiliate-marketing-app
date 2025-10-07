@@ -17,7 +17,8 @@ export default function DevPage() {
   const [otp, setOtp] = React.useState("")
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 p-6">
+    <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-8">
+
       <h1 className="text-2xl font-semibold">UI Sanity — Dev</h1>
 
       {/* Toast */}
