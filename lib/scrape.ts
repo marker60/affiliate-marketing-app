@@ -1,35 +1,57 @@
-// lib/scrape.ts
-import { chromium } from "playwright"
+// lib/scrape.ts — Cheerio-only scraper (no Playwright)
+import * as cheerio from "cheerio"
 
 export type ScrapeResult = {
-  url: string; title?: string; description?: string; bullets?: string[];
-  price?: string; specs?: Record<string,string>; html?: string;
+  url: string
+  title?: string
+  description?: string
+  bullets?: string[]
+  text?: string
 }
 
-export async function scrapeProduct(targetUrl: string): Promise<ScrapeResult> {
-  const browser = await chromium.launch()
-  const page = await browser.newPage()
-  	let u = targetUrl.trim();
-	if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-	await page.goto(u, { waitUntil: "domcontentloaded", timeout: 60000 });
+/**
+ * Lightweight HTML scrape using fetch + cheerio.
+ * Works on Vercel without Playwright.
+ */
+export async function scrape(url: string): Promise<ScrapeResult> {
+  const res = await fetch(url, {
+    headers: {
+      // Friendly UA helps some sites return full HTML
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  })
 
-  const title = await page.locator("meta[property='og:title'], title").first().evaluate(el => (el as any).content ?? el.textContent ?? undefined).catch(()=>undefined)
-  const description = await page.locator("meta[name='description'], meta[property='og:description']").first().evaluate(el => (el as any).content ?? undefined).catch(()=>undefined)
+  const html = await res.text()
+  const $ = cheerio.load(html)
 
-  const bullets = await page.locator("li").allTextContents().then(arr =>
-    arr.map(t => t.trim()).filter(t => t.length>0).slice(0,10)
-  ).catch(()=>[])
+  const title =
+    $('meta[property="og:title"]').attr("content")?.trim() ||
+    $("title").first().text().trim() ||
+    undefined
 
-  const html = await page.content()
-  const priceMatch = html.match(/\$[\s]*\d{1,3}(?:[,\d]{0,3})?(?:\.\d{2})?/);
-  const price = priceMatch?.[0]
+  const description =
+    $('meta[name="description"]').attr("content")?.trim() ||
+    $('meta[property="og:description"]').attr("content")?.trim() ||
+    undefined
 
-  // naive spec pairs
-  const specs: Record<string,string> = {}
-  const dt = await page.locator("dt,th").allTextContents().catch(()=>[])
-  const dd = await page.locator("dd,td").allTextContents().catch(()=>[])
-  dt.slice(0,8).forEach((k,i)=>{ const v = dd[i]?.trim(); if(k && v) specs[k.trim()] = v })
+  // Collect simple bullet text (limit to keep payload small)
+  const bullets = $("li")
+    .slice(0, 20)
+    .map((_, el) => $(el).text().trim())
+    .get()
+    .filter(Boolean)
 
-  await browser.close()
-  return { url: targetUrl, title: title?.trim(), description: description?.trim(), bullets, price, specs, html }
+  // Light page text (first ~10k chars from <p>)
+  const text = $("p")
+    .map((_, el) => $(el).text().trim())
+    .get()
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 10_000)
+
+  return { url, title, description, bullets, text }
 }
+
+export default scrape
