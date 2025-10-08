@@ -2,6 +2,10 @@
 
 import * as React from "react"
 
+// [LABEL: TOP IMPORTS — ADD THIS LINE]
+import { Carousel, CarouselItem } from "@/components/ui/carousel"
+
+
 /* --- Brief Tester (GET /api/brief and GET /api/brief/save) --- */
 function BriefTester() {
   const [url, setUrl] = React.useState("https://example.com")
@@ -125,6 +129,20 @@ export default function DevPage() {
   return (
     <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-8">
       <h1 className="text-2xl font-semibold">UI Sanity — Dev</h1>
+
+{/* [LABEL: JSX INSERT — CAROUSEL START] */}
+<section className="space-y-2">
+  <h2 className="font-medium">Carousel</h2>
+  <Carousel className="w-full max-w-none">
+    {[1, 2, 3].map((n) => (
+      <CarouselItem key={n} className="basis-full">
+        <div className="rounded-lg border p-10 text-center">Slide {n}</div>
+      </CarouselItem>
+    ))}
+  </Carousel>
+</section>
+{/* [LABEL: JSX INSERT — CAROUSEL END] */}
+
       <BriefTester />
       <SavedBriefs />
     </main>
