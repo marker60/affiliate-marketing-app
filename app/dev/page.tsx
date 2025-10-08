@@ -2,6 +2,14 @@
 
 import * as React from "react"
 
+// [LABEL: TOP IMPORTS — OTP]
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp"
+
+
 // [LABEL: TOP IMPORTS — CALENDAR]
 import { DayPicker } from "react-day-picker"
 import "react-day-picker/dist/style.css"
@@ -153,6 +161,19 @@ export default function DevPage() {
   <DayPicker mode="single" />
 </section>
 {/* [LABEL: JSX INSERT — CALENDAR END] */}
+
+{/* [LABEL: JSX INSERT — OTP START] */}
+<section className="space-y-2">
+  <h2 className="font-medium">OTP</h2>
+  <InputOTP maxLength={6} value={""} onChange={() => {}}>
+    <InputOTPGroup>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <InputOTPSlot key={i} index={i} />
+      ))}
+    </InputOTPGroup>
+  </InputOTP>
+</section>
+{/* [LABEL: JSX INSERT — OTP END] */}
 
 
       <BriefTester />
