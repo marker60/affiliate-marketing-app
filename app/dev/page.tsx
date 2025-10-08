@@ -2,6 +2,10 @@
 
 import * as React from "react"
 
+// [LABEL: TOP IMPORTS — CALENDAR]
+import { DayPicker } from "react-day-picker"
+import "react-day-picker/dist/style.css"
+
 // [LABEL: TOP IMPORTS — ADD THIS LINE]
 import { Carousel, CarouselItem } from "@/components/ui/carousel"
 
