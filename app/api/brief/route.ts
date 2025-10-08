@@ -1,12 +1,44 @@
-// app/api/brief/route.ts
+// [LABEL: TOP IMPORTS]
 import { NextResponse } from "next/server"
 import scrape from "@/lib/scrape"
 
-// Use Node runtime to avoid Edge gotchas while we verify
+// [LABEL: ROUTE SETTINGS]
 export const runtime = "nodejs"
-// Ensure this route is always executed server-side fresh
 export const dynamic = "force-dynamic"
 
+// [LABEL: HELPERS]
+async function readUrlFromRequest(req: Request): Promise<string | null> {
+  const { searchParams } = new URL(req.url)
+  const qp = searchParams.get("url")
+  if (qp) return qp
+
+  const ct = (req.headers.get("content-type") || "").toLowerCase()
+
+  // Try JSON body
+  if (ct.includes("application/json")) {
+    try {
+      const j = await req.json()
+      return (j?.url || j?.productUrl || j?.href || null) as string | null
+    } catch {
+      /* ignore and try form data */
+    }
+  }
+
+  // Try form body
+  if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
+    try {
+      const fd = await req.formData()
+      const v = (fd.get("url") || fd.get("productUrl") || fd.get("href")) as string | null
+      if (v) return v
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return null
+}
+
+// [LABEL: GET HANDLER]
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const url = searchParams.get("url")
@@ -24,11 +56,12 @@ export async function GET(req: Request) {
   }
 }
 
+// [LABEL: POST HANDLER — accepts JSON or form-data, keys: url/productUrl/href]
 export async function POST(req: Request) {
   try {
-    const { url } = await req.json()
+    const url = await readUrlFromRequest(req)
     if (!url) {
-      return NextResponse.json({ error: "Missing body.url" }, { status: 400 })
+      return NextResponse.json({ error: "Missing url in body or query" }, { status: 400 })
     }
     const result = await scrape(url)
     return NextResponse.json(result, { status: 200 })
