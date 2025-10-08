@@ -2,6 +2,18 @@
 
 import * as React from "react"
 
+// [LABEL: TOP IMPORTS — TOAST]
+import {
+  ToastProvider,
+  ToastViewport,
+  Toast,
+  ToastTitle,
+  ToastDescription,
+  ToastClose,
+  ToastAction,
+} from "@/components/ui/toast"
+
+
 // [LABEL: TOP IMPORTS — DRAWER]
 import { Drawer } from "@/components/ui/drawer"
 
@@ -236,6 +248,44 @@ export default function DevPage() {
   })()}
 </section>
 {/* [LABEL: JSX INSERT — DRAWER END] */}
+
+{/* [LABEL: JSX INSERT — TOAST START] */}
+<section className="space-y-2">
+  <h2 className="font-medium">Toast</h2>
+
+  {/* self-contained state for this demo */}
+  {(() => {
+    const [open, setOpen] = React.useState(false)
+
+    return (
+      <ToastProvider>
+        <div className="space-x-2">
+          <button
+            onClick={() => setOpen(true)}
+            className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
+          >
+            Show Toast
+          </button>
+        </div>
+
+        <Toast open={open} onOpenChange={setOpen}>
+          <div className="grid gap-1 p-3">
+            <ToastTitle>Saved!</ToastTitle>
+            <ToastDescription>Your settings were updated.</ToastDescription>
+          </div>
+          <div className="flex items-center gap-2 p-2">
+            <ToastAction altText="Undo">Undo</ToastAction>
+            <ToastClose className="rounded-md border px-2 py-1 text-xs">Close</ToastClose>
+          </div>
+        </Toast>
+
+        <ToastViewport />
+      </ToastProvider>
+    )
+  })()}
+</section>
+{/* [LABEL: JSX INSERT — TOAST END] */}
+
 
       <BriefTester />
       <SavedBriefs />
