@@ -15,7 +15,15 @@ import {
 
 
 // [LABEL: TOP IMPORTS — DRAWER]
-import { Drawer } from "@/components/ui/drawer"
+import {
+  Drawer,
+  DrawerTrigger,
+  DrawerContent,
+  DrawerClose,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerDescription,
+} from "@/components/ui/drawer"
 
 // [LABEL: TOP IMPORTS — RESIZABLE]
 import {
@@ -219,33 +227,33 @@ export default function DevPage() {
 {/* [LABEL: JSX INSERT — DRAWER START] */}
 <section className="space-y-2">
   <h2 className="font-medium">Drawer</h2>
-  {/* local state for this demo */}
-  {/* [LABEL: DRAWER STATE] */}
-  {(() => {
-    const [open, setOpen] = React.useState(false)
-    return (
-      <div className="space-x-2">
-        <button
-          onClick={() => setOpen(true)}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
-        >
-          Open Drawer
-        </button>
 
-        <Drawer open={open} onOpenChange={setOpen}>
-          <div className="p-6 space-y-4">
-            <p className="text-sm">Hello from Drawer.</p>
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
-            >
+  <Drawer>
+    <DrawerTrigger asChild>
+      <button
+        className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
+      >
+        Open Drawer
+      </button>
+    </DrawerTrigger>
+
+    <DrawerContent>
+      <div className="p-6 space-y-4">
+        <DrawerHeader>
+          <DrawerTitle>Demo Drawer</DrawerTitle>
+          <DrawerDescription>Tap Close to dismiss.</DrawerDescription>
+        </DrawerHeader>
+
+        <div className="flex items-center gap-2">
+          <DrawerClose asChild>
+            <button className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">
               Close
             </button>
-          </div>
-        </Drawer>
+          </DrawerClose>
+        </div>
       </div>
-    )
-  })()}
+    </DrawerContent>
+  </Drawer>
 </section>
 {/* [LABEL: JSX INSERT — DRAWER END] */}
 
