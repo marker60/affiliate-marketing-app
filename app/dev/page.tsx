@@ -2,6 +2,14 @@
 
 import * as React from "react"
 
+// [LABEL: TOP IMPORTS — RESIZABLE]
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable"
+
+
 // [LABEL: TOP IMPORTS — OTP]
 import {
   InputOTP,
@@ -175,6 +183,23 @@ export default function DevPage() {
 </section>
 {/* [LABEL: JSX INSERT — OTP END] */}
 
+{/* [LABEL: JSX INSERT — RESIZABLE START] */}
+<section className="space-y-2">
+  <h2 className="font-medium">Resizable</h2>
+  <ResizablePanelGroup
+    direction="horizontal"
+    className="min-h-[140px] rounded-md border"
+  >
+    <ResizablePanel defaultSize={50} className="p-3">
+      Left
+    </ResizablePanel>
+    <ResizableHandle />
+    <ResizablePanel defaultSize={50} className="p-3">
+      Right
+    </ResizablePanel>
+  </ResizablePanelGroup>
+</section>
+{/* [LABEL: JSX INSERT — RESIZABLE END] */}
 
       <BriefTester />
       <SavedBriefs />
