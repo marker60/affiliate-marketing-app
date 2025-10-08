@@ -147,6 +147,14 @@ export default function DevPage() {
 </section>
 {/* [LABEL: JSX INSERT — CAROUSEL END] */}
 
+{/* [LABEL: JSX INSERT — CALENDAR START] */}
+<section className="space-y-2">
+  <h2 className="font-medium">Calendar</h2>
+  <DayPicker mode="single" />
+</section>
+{/* [LABEL: JSX INSERT — CALENDAR END] */}
+
+
       <BriefTester />
       <SavedBriefs />
     </main>
