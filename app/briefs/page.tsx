@@ -32,7 +32,28 @@ export default function BriefsPage() {
   // [LABEL: RENDER]
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-8 space-y-6">
-      <h1 className="text-2xl font-semibold">Briefs</h1>
+      {/* [LABEL: HEADER + REFRESH] */}
+<div className="flex items-center justify-between">
+  <h1 className="text-2xl font-semibold">Briefs</h1>
+  <button
+    onClick={() => {
+      // simple re-fetch
+      setRows([]); setErr(null); setLoading(true);
+      fetch("/api/brief/list?limit=20", { cache: "no-store" })
+        .then(r => r.json())
+        .then(j => {
+          if (!j.ok) throw new Error(j.error || "Failed");
+          setRows(j.rows || [])
+        })
+        .catch(e => setErr(String(e.message || e)))
+        .finally(() => setLoading(false))
+    }}
+    className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
+  >
+    Refresh
+  </button>
+</div>
+
 
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {err && <p className="text-sm text-red-500">Error: {err}</p>}
@@ -60,9 +81,31 @@ export default function BriefsPage() {
                     {r.url}
                   </a>
                 </div>
-                <span className="text-xs text-muted-foreground select-all">
-                  {r.id}
-                </span>
+                {/* [LABEL: RIGHT-SIDE ACTIONS] */}
+<div className="flex items-center gap-2">
+  <span className="text-xs text-muted-foreground select-all">{r.id}</span>
+  <button
+    onClick={async () => {
+      if (!confirm("Delete this brief?")) return
+      try {
+        const res = await fetch(`/api/brief/delete?id=${encodeURIComponent(r.id)}`, {
+          method: "DELETE",
+        })
+        const json = await res.json()
+        if (!json.ok) throw new Error(json.error || "Delete failed")
+        // [LABEL: OPTIMISTIC REMOVE]
+        setRows((prev) => prev.filter((x) => x.id !== r.id))
+      } catch (e: any) {
+        alert(`Error: ${e.message || e}`)
+      }
+    }}
+    className="rounded-md border px-2 py-1 text-xs hover:bg-red-50 dark:hover:bg-red-900/20"
+    title="Delete"
+  >
+    Delete
+  </button>
+</div>
+
               </div>
 
               {r.description && <p className="mt-2 text-sm">{r.description}</p>}
