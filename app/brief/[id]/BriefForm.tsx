@@ -219,12 +219,13 @@ export default function BriefForm() {
 })()}
 
 
-      {/* [LABEL: OUTPUT — RAW JSON FALLBACK] */}
-      {out && (
-        <pre className="max-h-[28rem] overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap break-words">
-          {JSON.stringify(out, null, 2)}
-        </pre>
-      )}
-    </form>
-  )
-}
+     {/* [LABEL: OUTPUT — DEBUG JSON (COLLAPSIBLE)] */}
+{out && (
+  <details className="mt-2">
+    <summary className="cursor-pointer text-sm underline">Debug JSON</summary>
+    <pre className="mt-2 max-h-[24rem] overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap break-words">
+      {JSON.stringify(out, null, 2)}
+    </pre>
+  </details>
+)}
+
