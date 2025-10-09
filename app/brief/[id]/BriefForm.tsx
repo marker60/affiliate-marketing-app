@@ -162,57 +162,62 @@ export default function BriefForm() {
         </div>
       )}
 
-      {/* [LABEL: PREVIEW — STRUCTURED VIEW (CLEANED)] */}
-      {out && "url" in (out as ScrapeResult) && (
-        <div className="rounded-lg border p-4 space-y-3">
-          {(() => {
-            const o = out as ScrapeResult
-            let pretty = o.url
-            try {
-              const u = new URL(o.url)
-              pretty = u.origin + u.pathname
-            } catch {
-              /* ignore */
-            }
-            return (
-              <a
-                href={o.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-xs text-muted-foreground hover:underline truncate"
-                title={o.url}
-              >
-                {pretty}
-              </a>
-            )
-          })()}
+     {/* [LABEL: PREVIEW — CARD V2] */}
+{out && "url" in (out as ScrapeResult) && (() => {
+  const o = out as ScrapeResult
 
-          <h3 className="text-lg font-medium leading-snug break-words">
-            {(out as ScrapeResult).title || "(no title)"}
-          </h3>
+  // make a neat, click-through URL without the query string
+  let pretty = o.url
+  try {
+    const u = new URL(o.url)
+    pretty = u.origin + u.pathname
+  } catch {}
 
-          {(out as ScrapeResult).description && (
-            <p className="text-sm leading-relaxed break-words">
-              {(out as ScrapeResult).description}
-            </p>
-          )}
+  return (
+    <article className="rounded-xl border p-5 space-y-4">
+      <header className="space-y-1">
+        <a
+          href={o.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-xs text-muted-foreground hover:underline truncate"
+          title={o.url}
+        >
+          {pretty}
+        </a>
+        <h3 className="text-2xl font-semibold leading-snug break-words">
+          {o.title || "(no title)"}
+        </h3>
+      </header>
 
-          {Array.isArray((out as ScrapeResult).bullets) &&
-            (out as ScrapeResult).bullets!.length > 0 && (
-              <ul className="list-disc pl-5 text-sm space-y-1">
-                {(out as ScrapeResult).bullets!
-                  .map((b) => String(b).trim())
-                  .filter(Boolean)
-                  .slice(0, 8)
-                  .map((b, i) => (
-                    <li key={i} className="break-words">
-                      {b}
-                    </li>
-                  ))}
-              </ul>
-            )}
-        </div>
+      {o.description && (
+        <p className="text-base leading-relaxed break-words">{o.description}</p>
       )}
+
+      {Array.isArray(o.bullets) && o.bullets.length > 0 && (
+        <ul className="list-disc pl-6 text-sm space-y-1">
+          {o.bullets
+            .map((b) => String(b).trim())
+            .filter(Boolean)
+            .slice(0, 10)
+            .map((b, i) => (
+              <li key={i} className="break-words">{b}</li>
+            ))}
+        </ul>
+      )}
+
+      {o.text && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-sm underline">Full text</summary>
+          <div className="mt-2 max-h-[24rem] overflow-auto rounded-md border p-3 text-sm whitespace-pre-wrap break-words">
+            {o.text}
+          </div>
+        </details>
+      )}
+    </article>
+  )
+})()}
+
 
       {/* [LABEL: OUTPUT — RAW JSON FALLBACK] */}
       {out && (
