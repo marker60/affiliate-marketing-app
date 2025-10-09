@@ -6,21 +6,17 @@
 import * as React from "react"
 
 // [LABEL: TYPES]
-type BriefOut = {
+type ScrapeResult = {
   url: string
   title?: string
   description?: string
   bullets?: string[]
   text?: string
-} | { ok: true; id: string } | null
+}
+type SaveResult = { ok: true; id: string }
+type BriefOut = ScrapeResult | SaveResult | null
 
-/**
- * [LABEL: DEFAULT EXPORT]
- * - Product URL input (id="product-url")
- * - Generate Brief (POST /api/brief)
- * - Save (GET /api/brief/save?url=...)
- * - Test Fetch (GET /api/brief?url=...) shows JSON and a small preview
- */
+// [LABEL: DEFAULT EXPORT]
 export default function BriefForm() {
   // [LABEL: STATE]
   const [url, setUrl] = React.useState<string>("")
@@ -40,7 +36,10 @@ export default function BriefForm() {
   // [LABEL: ACTION — POST /api/brief {url}]
   async function generateBrief() {
     const u = url.trim()
-    if (!u) return setErr("Please enter a URL.")
+    if (!u) {
+      setErr("Please enter a URL.")
+      return
+    }
     try {
       setBusy(true)
       const res = await fetch("/api/brief", {
@@ -50,7 +49,7 @@ export default function BriefForm() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.message || json?.error || "Failed")
-      setOut(json)
+      setOut(json as ScrapeResult)
     } catch (e: any) {
       setErr(String(e?.message || e))
     } finally {
@@ -61,13 +60,18 @@ export default function BriefForm() {
   // [LABEL: ACTION — GET /api/brief/save?url=...]
   async function saveBrief() {
     const u = url.trim()
-    if (!u) return setErr("Please enter a URL.")
+    if (!u) {
+      setErr("Please enter a URL.")
+      return
+    }
     try {
       setBusy(true)
-      const res = await fetch(`/api/brief/save?url=${encodeURIComponent(u)}`, { method: "GET" })
+      const res = await fetch(`/api/brief/save?url=${encodeURIComponent(u)}`, {
+        method: "GET",
+      })
       const json = await res.json()
       if (!res.ok || !json.ok) throw new Error(json?.error || "Save failed")
-      setOut(json) // shows { ok: true, id }
+      setOut(json as SaveResult) // { ok: true, id }
     } catch (e: any) {
       setErr(String(e?.message || e))
     } finally {
@@ -78,13 +82,18 @@ export default function BriefForm() {
   // [LABEL: ACTION — DEBUG GET /api/brief?url=...]
   async function testFetch() {
     const u = url.trim()
-    if (!u) return setErr("Please enter a URL.")
+    if (!u) {
+      setErr("Please enter a URL.")
+      return
+    }
     try {
       setBusy(true)
-      const res = await fetch(`/api/brief?url=${encodeURIComponent(u)}`, { cache: "no-store" })
+      const res = await fetch(`/api/brief?url=${encodeURIComponent(u)}`, {
+        cache: "no-store",
+      })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.message || json?.error || "Fetch failed")
-      setOut(json)
+      setOut(json as ScrapeResult)
     } catch (e: any) {
       setErr(String(e?.message || e))
     } finally {
@@ -96,7 +105,10 @@ export default function BriefForm() {
   return (
     <form
       className="mx-auto w-full max-w-3xl space-y-4"
-      onSubmit={(e) => { e.preventDefault(); generateBrief() }}
+      onSubmit={(e) => {
+        e.preventDefault()
+        void generateBrief()
+      }}
     >
       {/* [LABEL: FIELD — PRODUCT URL] */}
       <div className="space-y-2">
@@ -123,6 +135,7 @@ export default function BriefForm() {
         >
           {loading ? "Working…" : "Generate Brief"}
         </button>
+
         <button
           type="button"
           onClick={saveBrief}
@@ -131,6 +144,7 @@ export default function BriefForm() {
         >
           {loading ? "Saving…" : "Save"}
         </button>
+
         <button
           type="button"
           onClick={testFetch}
@@ -148,58 +162,61 @@ export default function BriefForm() {
         </div>
       )}
 
-     {/* [LABEL: PREVIEW — STRUCTURED VIEW (CLEANED)] */}
-{out && "url" in out && (
-  <div className="rounded-lg border p-4 space-y-3">
-    {/* pretty URL (hide long query strings) */}
-    {(() => {
-      let pretty = out.url
-      try {
-        const u = new URL(out.url)
-        pretty = u.origin + u.pathname // strip ?query
-      } catch {}
-      return (
-        <a
-          href={out.url}
-          target="_blank"
-          rel="noreferrer"
-          className="block text-xs text-muted-foreground hover:underline truncate"
-          title={out.url}
-        >
-          {pretty}
-        </a>
-      )
-    })()}
+      {/* [LABEL: PREVIEW — STRUCTURED VIEW (CLEANED)] */}
+      {out && "url" in (out as ScrapeResult) && (
+        <div className="rounded-lg border p-4 space-y-3">
+          {(() => {
+            const o = out as ScrapeResult
+            let pretty = o.url
+            try {
+              const u = new URL(o.url)
+              pretty = u.origin + u.pathname
+            } catch {
+              /* ignore */
+            }
+            return (
+              <a
+                href={o.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-xs text-muted-foreground hover:underline truncate"
+                title={o.url}
+              >
+                {pretty}
+              </a>
+            )
+          })()}
 
-    <h3 className="text-lg font-medium leading-snug break-words">
-      {out.title || "(no title)"}
-    </h3>
+          <h3 className="text-lg font-medium leading-snug break-words">
+            {(out as ScrapeResult).title || "(no title)"}
+          </h3>
 
-    {out.description && (
-      <p className="text-sm leading-relaxed break-words">
-        {out.description}
-      </p>
-    )}
+          {(out as ScrapeResult).description && (
+            <p className="text-sm leading-relaxed break-words">
+              {(out as ScrapeResult).description}
+            </p>
+          )}
 
-    {Array.isArray(out.bullets) && out.bullets.length > 0 && (
-      <ul className="list-disc pl-5 text-sm space-y-1">
-        {out.bullets
-          .map((b) => String(b).trim())
-          .filter(Boolean)
-          .slice(0, 8)
-          .map((b, i) => (
-            <li key={i} className="break-words">{b}</li>
-          ))}
-      </ul>
-    )}
-  </div>
-)}
-<pre className="max-h-[28rem] overflow-auto rounded-md border p-3 text-xs">
+          {Array.isArray((out as ScrapeResult).bullets) &&
+            (out as ScrapeResult).bullets!.length > 0 && (
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                {(out as ScrapeResult).bullets!
+                  .map((b) => String(b).trim())
+                  .filter(Boolean)
+                  .slice(0, 8)
+                  .map((b, i) => (
+                    <li key={i} className="break-words">
+                      {b}
+                    </li>
+                  ))}
+              </ul>
+            )}
+        </div>
+      )}
 
       {/* [LABEL: OUTPUT — RAW JSON FALLBACK] */}
       {out && (
         <pre className="max-h-[28rem] overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap break-words">
-
           {JSON.stringify(out, null, 2)}
         </pre>
       )}
