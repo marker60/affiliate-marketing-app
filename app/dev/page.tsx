@@ -48,76 +48,127 @@ import "react-day-picker/dist/style.css"
 // [LABEL: TOP IMPORTS — ADD THIS LINE]
 import { Carousel, CarouselItem } from "@/components/ui/carousel"
 
+{/* [LABEL: JSX INSERT — BRIEF TESTER START] */}
+<section className="space-y-2">
+  <h2 className="font-medium">Brief Tester</h2>
+  {(() => {
+    const [raw, setRaw] = React.useState("")
+    const [msg, setMsg] = React.useState<string | null>(null)
+    const [busy, setBusy] = React.useState(false)
 
-/* --- Brief Tester (GET /api/brief and GET /api/brief/save) --- */
-function BriefTester() {
-  const [url, setUrl] = React.useState("https://example.com")
-  const [out, setOut] = React.useState<any>(null)
-  const [loading, setLoading] = React.useState(false)
-  const [err, setErr] = React.useState<string | null>(null)
+    // [LABEL: HELPER — sanitizeUrl]
+    function sanitizeUrl(input: string): string {
+      let s = (input || "").trim()
 
-  async function run() {
-    setLoading(true); setErr(null); setOut(null)
-    try {
-      const res = await fetch(`/api/brief?url=${encodeURIComponent(url)}`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.message || json?.error || "Failed")
-      setOut(json)
-    } catch (e: any) {
-      setErr(String(e.message || e))
-    } finally {
-      setLoading(false)
+      // If multiple protocol sequences were pasted back-to-back (e.g., "...comhttps://www...")
+      // take the last occurrence as the intended URL.
+      const lastHttps = s.lastIndexOf("https://")
+      const lastHttp = s.lastIndexOf("http://")
+      const start = Math.max(lastHttps, lastHttp)
+      if (start > 0) s = s.slice(start)
+
+      // Validate; if invalid, try to pull a URL-shaped token
+      try {
+        // throws if invalid
+        // eslint-disable-next-line no-new
+        new URL(s)
+        return s
+      } catch {
+        const m = s.match(/https?:\/\/\S+/)
+        if (m && m[0]) {
+          try {
+            // eslint-disable-next-line no-new
+            new URL(m[0])
+            return m[0]
+          } catch {
+            /* fallthrough */
+          }
+        }
+      }
+      return ""
     }
-  }
 
-  async function save() {
-    setLoading(true); setErr(null); setOut(null)
-    try {
-      const res = await fetch(`/api/brief/save?url=${encodeURIComponent(url)}`)
-      const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json?.error || "Save failed")
-      setOut(json)
-    } catch (e: any) {
-      setErr(String(e.message || e))
-    } finally {
-      setLoading(false)
+    async function doFetch() {
+      setMsg(null)
+      const url = sanitizeUrl(raw)
+      if (!url) {
+        setMsg("Please paste a valid product URL (starting with http:// or https://).")
+        return
+      }
+      try {
+        setBusy(true)
+        const res = await fetch(`/api/brief?url=${encodeURIComponent(url)}`, { cache: "no-store" })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.message || json?.error || "Fetch failed")
+        setMsg(`OK: ${json.title || "(no title found)"}`)
+      } catch (e: any) {
+        setMsg(`Error: ${e?.message || e}`)
+      } finally {
+        setBusy(false)
+      }
     }
-  }
 
-  return (
-    <section className="space-y-2">
-      <h2 className="font-medium">Brief Tester</h2>
-      <div className="flex gap-2">
+    async function doSave() {
+      setMsg(null)
+      const url = sanitizeUrl(raw)
+      if (!url) {
+        setMsg("Please paste a valid product URL before saving.")
+        return
+      }
+      try {
+        setBusy(true)
+        const res = await fetch(`/api/brief/save?url=${encodeURIComponent(url)}`)
+        const json = await res.json()
+        if (!res.ok || !json.ok) throw new Error(json?.error || "Save failed")
+        setMsg("Saved! Check the Briefs page.")
+      } catch (e: any) {
+        setMsg(`Error: ${e?.message || e}`)
+      } finally {
+        setBusy(false)
+      }
+    }
+
+    return (
+      <div className="space-y-2">
         <input
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          placeholder="Paste a product URL (any site)"
           className="w-full rounded-md border bg-transparent px-3 py-2"
-          placeholder="https://…"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
         />
-        <button
-          onClick={run}
-          disabled={loading}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? "Loading…" : "Fetch"}
-        </button>
-        <button
-          onClick={save}
-          disabled={loading}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? "Saving…" : "Save"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={doFetch}
+            disabled={busy}
+            className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {busy ? "Fetching…" : "Fetch"}
+          </button>
+          <button
+            onClick={doSave}
+            disabled={busy}
+            className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+
+        {msg && (
+          <div
+            className={`text-sm ${
+              msg.startsWith("OK:") || msg.startsWith("Saved!") ? "text-emerald-500" : "text-red-500"
+            }`}
+          >
+            {msg}
+          </div>
+        )}
       </div>
-      {err && <div className="text-red-500 text-sm">Error: {err}</div>}
-      {out && (
-        <pre className="max-h-80 overflow-auto rounded-md border p-3 text-xs">
-          {JSON.stringify(out, null, 2)}
-        </pre>
-      )}
-    </section>
-  )
-}
+    )
+  })()}
+</section>
+{/* [LABEL: JSX INSERT — BRIEF TESTER END] */}
+
+
 
 /* --- Saved Briefs viewer (GET /api/brief/list) --- */
 function SavedBriefs() {
