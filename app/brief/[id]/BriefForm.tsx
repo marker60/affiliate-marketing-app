@@ -161,6 +161,17 @@ export default function BriefForm() {
         </div>
       )}
 
+{/* [LABEL: SUCCESS — SAVED LINK] */}
+{out && "ok" in (out as any) && (out as any).ok === true && (
+  <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+    Saved!{" "}
+    <a href="/briefs" className="underline">
+      View in Briefs
+    </a>
+  </div>
+)}
+
+
       {/* [LABEL: PREVIEW — CARD V2] */}
       {out && "url" in (out as ScrapeResult) && (() => {
         const o = out as ScrapeResult
