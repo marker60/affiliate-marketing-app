@@ -148,23 +148,58 @@ export default function BriefForm() {
         </div>
       )}
 
-      {/* [LABEL: PREVIEW — STRUCTURED VIEW] */}
-      {out && "url" in out && (
-        <div className="rounded-lg border p-4 space-y-2">
-          <div className="text-xs text-muted-foreground">{out.url}</div>
-          <h3 className="text-lg font-medium">{out.title || "(no title)"}</h3>
-          {out.description && <p className="text-sm">{out.description}</p>}
-          {Array.isArray(out.bullets) && out.bullets.length > 0 && (
-            <ul className="list-disc pl-5 text-sm">
-              {out.bullets.slice(0, 8).map((b, i) => <li key={i}>{b}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
+     {/* [LABEL: PREVIEW — STRUCTURED VIEW (CLEANED)] */}
+{out && "url" in out && (
+  <div className="rounded-lg border p-4 space-y-3">
+    {/* pretty URL (hide long query strings) */}
+    {(() => {
+      let pretty = out.url
+      try {
+        const u = new URL(out.url)
+        pretty = u.origin + u.pathname // strip ?query
+      } catch {}
+      return (
+        <a
+          href={out.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-xs text-muted-foreground hover:underline truncate"
+          title={out.url}
+        >
+          {pretty}
+        </a>
+      )
+    })()}
+
+    <h3 className="text-lg font-medium leading-snug break-words">
+      {out.title || "(no title)"}
+    </h3>
+
+    {out.description && (
+      <p className="text-sm leading-relaxed break-words">
+        {out.description}
+      </p>
+    )}
+
+    {Array.isArray(out.bullets) && out.bullets.length > 0 && (
+      <ul className="list-disc pl-5 text-sm space-y-1">
+        {out.bullets
+          .map((b) => String(b).trim())
+          .filter(Boolean)
+          .slice(0, 8)
+          .map((b, i) => (
+            <li key={i} className="break-words">{b}</li>
+          ))}
+      </ul>
+    )}
+  </div>
+)}
+<pre className="max-h-[28rem] overflow-auto rounded-md border p-3 text-xs">
 
       {/* [LABEL: OUTPUT — RAW JSON FALLBACK] */}
       {out && (
-        <pre className="max-h-[28rem] overflow-auto rounded-md border p-3 text-xs">
+        <pre className="max-h-[28rem] overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap break-words">
+
           {JSON.stringify(out, null, 2)}
         </pre>
       )}
