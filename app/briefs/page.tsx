@@ -65,22 +65,66 @@ export default function BriefsPage() {
       {rows.length > 0 && (
         <ul className="space-y-4">
           {rows.map((r) => (
-            <li key={r.id} className="rounded-lg border p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm text-muted-foreground">
-                    {new Date(r.created_at).toLocaleString()}
-                  </div>
-                  <h2 className="text-lg font-medium">{r.title || "(no title)"}</h2>
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm underline"
-                  >
-                    {r.url}
-                  </a>
-                </div>
+            // [LABEL: CARD WRAP FIX]
+<li key={r.id} className="rounded-lg border p-4 overflow-hidden">
+
+             // [LABEL: HEADER LAYOUT — WRAP + PIN ACTIONS]
+<div className="flex items-start justify-between gap-4 flex-wrap">
+  {/* [LABEL: LEFT — TIME, TITLE, URL] */}
+  <div className="min-w-0">
+    <div className="text-sm text-muted-foreground">
+      {new Date(r.created_at).toLocaleString()}
+    </div>
+    <h2 className="text-lg font-medium break-words">
+      {r.title || "(no title)"}
+    </h2>
+
+    {/* [LABEL: PRETTY URL — NO QUERY + TRUNCATE] */}
+    {(() => {
+      let pretty = r.url
+      try {
+        const u = new URL(r.url)
+        pretty = u.origin + u.pathname // strip ?query
+      } catch {}
+      return (
+        <a
+          href={r.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-sm text-muted-foreground hover:underline truncate max-w-[65ch] sm:max-w-[80ch]"
+          title={r.url}
+        >
+          {pretty}
+        </a>
+      )
+    })()}
+  </div>
+
+  {/* [LABEL: RIGHT — ID + DELETE (PINNED)] */}
+  <div className="flex items-center gap-2 shrink-0">
+    <span className="text-xs text-muted-foreground select-all">{r.id}</span>
+    <button
+      onClick={async () => {
+        if (!confirm("Delete this brief?")) return
+        try {
+          const res = await fetch(`/api/brief/delete?id=${encodeURIComponent(r.id)}`, {
+            method: "DELETE",
+          })
+          const json = await res.json()
+          if (!json.ok) throw new Error(json.error || "Delete failed")
+          setRows((prev) => prev.filter((x) => x.id !== r.id))
+        } catch (e: any) {
+          alert(`Error: ${e.message || e}`)
+        }
+      }}
+      className="rounded-md border px-2 py-1 text-xs hover:bg-red-50 dark:hover:bg-red-900/20"
+      title="Delete"
+    >
+      Delete
+    </button>
+  </div>
+</div>
+
                 {/* [LABEL: RIGHT-SIDE ACTIONS] */}
 <div className="flex items-center gap-2">
   <span className="text-xs text-muted-foreground select-all">{r.id}</span>
