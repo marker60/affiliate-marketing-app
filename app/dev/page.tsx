@@ -45,6 +45,121 @@ import {
 import { DayPicker } from "react-day-picker"
 import "react-day-picker/dist/style.css"
 
+// [LABEL: COMPONENT — BriefTester]
+function BriefTester() {
+  const [raw, setRaw] = React.useState("")
+  const [msg, setMsg] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState(false)
+
+  // [LABEL: HELPER — sanitizeUrl]
+  function sanitizeUrl(input: string): string {
+    let s = (input || "").trim()
+
+    // If two URLs got jammed together, keep the *last* http(s) occurrence.
+    const lastHttps = s.lastIndexOf("https://")
+    const lastHttp = s.lastIndexOf("http://")
+    const start = Math.max(lastHttps, lastHttp)
+    if (start > 0) s = s.slice(start)
+
+    try {
+      // throws if invalid
+      // eslint-disable-next-line no-new
+      new URL(s)
+      return s
+    } catch {
+      const m = s.match(/https?:\/\/\S+/)
+      if (m?.[0]) {
+        try {
+          // eslint-disable-next-line no-new
+          new URL(m[0])
+          return m[0]
+        } catch {/* ignore */}
+      }
+    }
+    return ""
+  }
+
+  async function doFetch() {
+    setMsg(null)
+    const url = sanitizeUrl(raw)
+    if (!url) {
+      setMsg("Please paste a valid product URL (starting with http:// or https://).")
+      return
+    }
+    try {
+      setBusy(true)
+      const res = await fetch(`/api/brief?url=${encodeURIComponent(url)}`, { cache: "no-store" })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.message || json?.error || "Fetch failed")
+      setMsg(`OK: ${json.title || "(no title found)"}`)
+    } catch (e: any) {
+      setMsg(`Error: ${e?.message || e}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doSave() {
+    setMsg(null)
+    const url = sanitizeUrl(raw)
+    if (!url) {
+      setMsg("Please paste a valid product URL before saving.")
+      return
+    }
+    try {
+      setBusy(true)
+      const res = await fetch(`/api/brief/save?url=${encodeURIComponent(url)}`)
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json?.error || "Save failed")
+      setMsg("Saved! Check the Briefs page.")
+    } catch (e: any) {
+      setMsg(`Error: ${e?.message || e}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="space-y-2">
+      <h2 className="font-medium">Brief Tester</h2>
+      <input
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        placeholder="Paste a product URL (any site)"
+        className="w-full rounded-md border bg-transparent px-3 py-2"
+      />
+      <div className="flex gap-2">
+        <button
+          onClick={doFetch}
+          disabled={busy}
+          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {busy ? "Fetching…" : "Fetch"}
+        </button>
+        <button
+          onClick={doSave}
+          disabled={busy}
+          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
+      </div>
+
+      {msg && (
+        <div
+          className={`text-sm ${
+            msg.startsWith("OK:") || msg.startsWith("Saved!") ? "text-emerald-500" : "text-red-500"
+          }`}
+        >
+          {msg}
+        </div>
+      )}
+    </section>
+  )
+}
+
+
+
 // [LABEL: TOP IMPORTS — ADD THIS LINE]
 import { Carousel, CarouselItem } from "@/components/ui/carousel"
 
