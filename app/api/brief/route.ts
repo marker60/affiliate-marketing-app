@@ -19,7 +19,7 @@ type ErrorResult = {
 }
 type Result = ScrapeResult | ErrorResult
 
-// [LABEL: CONSTANTS — PRIMARY + FALLBACK REQUEST HEADERS]
+// [LABEL: UA + HEADERS (PRIMARY/MOBILE)]
 const UA_DESKTOP =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 const UA_MOBILE =
@@ -61,30 +61,24 @@ const TRACKING_KEYS = [
   "ref",
 ]
 
-// [LABEL: UTILS — STRIP TRACKING QUERY PARAMS]
+// [LABEL: UTIL — STRIP TRACKING FROM URL]
 function stripTrackingParams(inputUrl: string): string {
   try {
     const u = new URL(inputUrl)
-    const before = u.toString()
-    // if query includes any tracking keys, drop the WHOLE query (simplest + safest)
     const hasTracking =
       [...u.searchParams.keys()].some((k) => TRACKING_KEYS.includes(k.toLowerCase())) ||
       u.search.includes("utm_")
-    if (hasTracking) {
-      u.search = "" // nuke query
-    }
-    const after = u.toString()
-    return after
+    if (hasTracking) u.search = ""
+    return u.toString()
   } catch {
-    // if invalid URL, return original
     return inputUrl
   }
 }
 
-// [LABEL: UTILS — SLEEP]
+// [LABEL: UTIL — SLEEP]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// [LABEL: UTILS — FETCH WITH TIMEOUT]
+// [LABEL: UTIL — FETCH WITH TIMEOUT]
 async function fetchWithTimeout(url: string, headers: Record<string, string>, ms = 15000) {
   const controller = new AbortController()
   const t = setTimeout(() => controller.abort(), ms)
@@ -100,11 +94,10 @@ async function fetchWithTimeout(url: string, headers: Record<string, string>, ms
   }
 }
 
-// [LABEL: BOT-WALL DETECTOR (CONSERVATIVE)]
+// [LABEL: DETECT BOT WALL (CONSERVATIVE)]
 function looksLikeAntiBot(html: string, title: string | undefined): boolean {
   const h = html.toLowerCase()
   const t = (title || "").toLowerCase()
-
   const signals = [
     /just a moment/.test(t),
     /checking your browser/.test(t),
@@ -119,17 +112,11 @@ function looksLikeAntiBot(html: string, title: string | undefined): boolean {
   ]
   const count = signals.filter(Boolean).length
   if (count >= 2) return true
-
-  // Weak signal + tiny page → likely interstitial
   try {
     const $ = cheerio.load(html)
     const bodyText = $("body").text().replace(/\s+/g, " ").trim()
-    const textLen = bodyText.length
-    const htmlLen = html.length
-    if (count === 1 && textLen < 800 && htmlLen < 20000) return true
-  } catch {
-    /* ignore */
-  }
+    if (count === 1 && bodyText.length < 800 && html.length < 20000) return true
+  } catch {}
   return false
 }
 
@@ -143,15 +130,13 @@ function isAccessDeniedLike(title: string | undefined, text: string) {
   )
 }
 
-// [LABEL: HTML → SCRAPE RESULT]
+// [LABEL: PARSE HTML → RESULT]
 function parseHtml(url: string, html: string): ScrapeResult {
   const $ = cheerio.load(html)
-
   const title =
     $('meta[property="og:title"]').attr("content") ||
     $("title").first().text()?.trim() ||
     undefined
-
   const description =
     $('meta[name="description"]').attr("content") ||
     $('meta[property="og:description"]').attr("content") ||
@@ -174,55 +159,46 @@ function parseHtml(url: string, html: string): ScrapeResult {
   }
 }
 
-// [LABEL: CORE — TRY SEQUENCE WITH RETRIES + STRIP-QUERY FALLBACK]
-async function tryScrapeOnce(targetUrl: string, headers: Record<string, string>): Promise<Response> {
-  return fetchWithTimeout(targetUrl, headers, 18000)
-}
-
-async function scrape(url: string): Promise<Result> {
-  // [LABEL: PREP — REFERER + CLEAN URL CANDIDATE]
+// [LABEL: CORE — SCRAPE BY URL WITH RETRIES/STRIP]
+async function scrapeByUrl(url: string): Promise<Result> {
+  // referer
   let referer: string | undefined
   try {
     const u = new URL(url)
     referer = `${u.origin}/`
-  } catch {/* ignore */}
+  } catch {}
 
-  const cleanedUrl = stripTrackingParams(url)
-  const candidates = [url, cleanedUrl].filter((v, i, a) => a.indexOf(v) === i) // de-dup
+  const candidates = [url, stripTrackingParams(url)].filter((v, i, a) => a.indexOf(v) === i)
 
-  // [LABEL: TRY EACH CANDIDATE URL]
   for (const candidate of candidates) {
-    // Attempt A: desktop
+    // Attempt A: desktop headers
     let res: Response
     try {
-      res = await tryScrapeOnce(candidate, HEADERS_PRIMARY(referer))
-    } catch (e: any) {
-      // network abort → try next candidate
+      res = await fetchWithTimeout(candidate, HEADERS_PRIMARY(referer), 18000)
+    } catch {
       continue
     }
 
-    // Attempt A2: if 403/503, try mobile headers
+    // Attempt B: 403/503 → try mobile headers
     if (res.status === 403 || res.status === 503) {
       await sleep(700)
       try {
-        res = await tryScrapeOnce(candidate, HEADERS_FALLBACK(referer))
-      } catch (e: any) {
-        // next candidate
+        res = await fetchWithTimeout(candidate, HEADERS_FALLBACK(referer), 18000)
+      } catch {
         continue
       }
     }
 
-    // read html if looks HTML or 403 (might still include HTML)
     const ctype = (res.headers.get("content-type") || "").toLowerCase()
     const isHtmlLike = /text\/html|application\/xhtml\+xml/.test(ctype) || res.status === 403
+
     let html = ""
     if (isHtmlLike) {
       try {
         html = await res.text()
-      } catch {/* ignore */}
+      } catch {}
     }
 
-    // if OK → parse normally (unless bot wall)
     if (res.ok) {
       const $ = cheerio.load(html || "")
       const title =
@@ -235,58 +211,76 @@ async function scrape(url: string): Promise<Result> {
       return parseHtml(candidate, html || "")
     }
 
-    // if 403 but HTML looks like a real product page, parse anyway
     if (res.status === 403 && html) {
       try {
         const $ = cheerio.load(html)
         const title =
           $('meta[property="og:title"]').attr("content") || $("title").first().text()?.trim()
         const bodyText = $("body").text().replace(/\s+/g, " ").trim()
-        const textLen = bodyText.length
-        if (!isAccessDeniedLike(title, bodyText) && textLen > 1200 && !looksLikeAntiBot(html, title)) {
+        if (!isAccessDeniedLike(title, bodyText) && bodyText.length > 1200 && !looksLikeAntiBot(html, title)) {
           return parseHtml(candidate, html)
         }
-      } catch {/* ignore */}
+      } catch {}
     }
-
-    // non-OK and not salvageable → try next candidate
   }
 
-  // [LABEL: TOTAL FAIL]
   return { ok: false, error: "http_403", details: "after retries" }
 }
 
-// [LABEL: HANDLERS]
+// [LABEL: CORE — SCRAPE BY RAW HTML (NO NETWORK)]
+async function scrapeByHtml(sourceUrl: string, html: string): Promise<Result> {
+  // We trust that the caller pasted the page HTML they loaded in a browser.
+  try {
+    return parseHtml(sourceUrl, html)
+  } catch (e: any) {
+    return { ok: false, error: "parse_error", details: String(e?.message || e) }
+  }
+}
+
+// [LABEL: HANDLER — GET ?url=...]
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const url = searchParams.get("url")
   if (!url) {
     return NextResponse.json({ ok: false, error: "missing_url" }, { status: 400 })
   }
-  const result = await scrape(url)
-  if ("ok" in result && result.ok === false) {
-    const status =
-      result.error === "blocked_by_anti_bot" ? 403 :
-      result.error.startsWith("http_") ? parseInt(result.error.slice(5)) || 500 :
-      500
-    return NextResponse.json(result, { status })
-  }
-  return NextResponse.json(result as ScrapeResult, { status: 200 })
+  const result = await scrapeByUrl(url)
+  const status =
+    "ok" in result && (result as ErrorResult).ok === false
+      ? result.error === "blocked_by_anti_bot"
+        ? 403
+        : result.error.startsWith("http_")
+        ? parseInt(result.error.slice(5)) || 500
+        : 500
+      : 200
+  return NextResponse.json(result, { status })
 }
 
+// [LABEL: HANDLER — POST {url?, html?}]
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const url = (body?.url as string) || ""
-  if (!url) {
-    return NextResponse.json({ ok: false, error: "missing_url" }, { status: 400 })
+  const html = (body?.html as string) || ""
+
+  if (!url && !html) {
+    return NextResponse.json({ ok: false, error: "missing_url_or_html" }, { status: 400 })
   }
-  const result = await scrape(url)
-  if ("ok" in result && result.ok === false) {
-    const status =
-      result.error === "blocked_by_anti_bot" ? 403 :
-      result.error.startsWith("http_") ? parseInt(result.error.slice(5)) || 500 :
-      500
-    return NextResponse.json(result, { status })
+
+  let result: Result
+  if (html) {
+    // prefer raw HTML when provided (no network)
+    result = await scrapeByHtml(url || "about:blank", html)
+  } else {
+    result = await scrapeByUrl(url)
   }
-  return NextResponse.json(result as ScrapeResult, { status: 200 })
+
+  const status =
+    "ok" in result && (result as ErrorResult).ok === false
+      ? result.error === "blocked_by_anti_bot"
+        ? 403
+        : result.error.startsWith("http_")
+        ? parseInt(result.error.slice(5)) || 500
+        : 500
+      : 200
+  return NextResponse.json(result, { status })
 }

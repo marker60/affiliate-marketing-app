@@ -23,7 +23,9 @@ type BriefOut = ScrapeResult | SaveResult | ApiError | null
 // [LABEL: DEFAULT EXPORT]
 export default function BriefForm() {
   // [LABEL: STATE]
+  const [mode, setMode] = React.useState<"url" | "html">("url")
   const [url, setUrl] = React.useState("")
+  const [html, setHtml] = React.useState("") // used in HTML mode
   const [loading, setLoading] = React.useState(false)
   const [err, setErr] = React.useState<string | null>(null)
   const [out, setOut] = React.useState<BriefOut>(null)
@@ -37,16 +39,22 @@ export default function BriefForm() {
     }
   }
 
-  // [LABEL: ACTION — POST /api/brief {url}]
+  // [LABEL: ACTION — GENERATE (URL or HTML)]
   const generateBrief = async () => {
     const u = url.trim()
-    if (!u) return setErr("Please enter a URL.")
+    const h = html.trim()
+    if (mode === "url" && !u) return setErr("Please enter a URL.")
+    if (mode === "html" && !h) return setErr("Please paste page HTML.")
+
     try {
       setBusy(true)
       const res = await fetch("/api/brief", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: u }),
+        body:
+          mode === "html"
+            ? JSON.stringify({ url: u || "about:blank", html: h })
+            : JSON.stringify({ url: u }),
       })
       const json = (await res.json()) as ScrapeResult | ApiError
       if (!res.ok || ("ok" in json && json.ok === false)) {
@@ -62,7 +70,7 @@ export default function BriefForm() {
     }
   }
 
-  // [LABEL: ACTION — GET /api/brief/save?url=...]
+  // [LABEL: ACTION — SAVE (URL MODE ONLY)]
   const saveBrief = async () => {
     const u = url.trim()
     if (!u) return setErr("Please enter a URL.")
@@ -83,7 +91,7 @@ export default function BriefForm() {
     }
   }
 
-  // [LABEL: ACTION — DEBUG GET /api/brief?url=...]
+  // [LABEL: ACTION — TEST FETCH (URL MODE ONLY)]
   const testFetch = async () => {
     const u = url.trim()
     if (!u) return setErr("Please enter a URL.")
@@ -113,21 +121,61 @@ export default function BriefForm() {
         void generateBrief()
       }}
     >
-      {/* [LABEL: FIELD — PRODUCT URL] */}
-      <div className="space-y-2">
-        <label htmlFor="product-url" className="text-sm font-medium">
-          Product URL
-        </label>
-        <input
-          id="product-url"
-          type="url"
-          inputMode="url"
-          placeholder="https://example.com/product"
-          className="w-full rounded-md border bg-transparent px-3 py-2"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
+      {/* [LABEL: MODE TABS] */}
+      <div className="inline-flex rounded-md border p-1 text-sm">
+        <button
+          type="button"
+          onClick={() => setMode("url")}
+          className={`rounded px-3 py-1 ${mode === "url" ? "bg-gray-100 dark:bg-zinc-800" : ""}`}
+        >
+          From URL
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("html")}
+          className={`rounded px-3 py-1 ${mode === "html" ? "bg-gray-100 dark:bg-zinc-800" : ""}`}
+        >
+          From HTML
+        </button>
       </div>
+
+      {/* [LABEL: FIELD — URL INPUT (VISIBLE IN URL MODE)] */}
+      {mode === "url" && (
+        <div className="space-y-2">
+          <label htmlFor="product-url" className="text-sm font-medium">
+            Product URL
+          </label>
+          <input
+            id="product-url"
+            type="url"
+            inputMode="url"
+            placeholder="https://example.com/product"
+            className="w-full rounded-md border bg-transparent px-3 py-2"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </div>
+      )}
+
+      {/* [LABEL: FIELD — HTML TEXTAREA (VISIBLE IN HTML MODE)] */}
+      {mode === "html" && (
+        <div className="space-y-2">
+          <label htmlFor="product-html" className="text-sm font-medium">
+            Page HTML
+          </label>
+          <textarea
+            id="product-html"
+            rows={10}
+            placeholder="Paste the page HTML here (View Source or Copy OuterHTML of &lt;html&gt;)"
+            className="w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs"
+            value={html}
+            onChange={(e) => setHtml(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Tip: In your browser, open the product page → right-click → “View page source” → copy all, paste here.
+          </p>
+        </div>
+      )}
 
       {/* [LABEL: ACTIONS] */}
       <div className="flex flex-wrap gap-2">
@@ -139,23 +187,28 @@ export default function BriefForm() {
           {loading ? "Working…" : "Generate Brief"}
         </button>
 
-        <button
-          type="button"
-          onClick={() => void saveBrief()}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-          disabled={loading}
-        >
-          {loading ? "Saving…" : "Save"}
-        </button>
+        {/* Hide Save/Test when using HTML mode (no canonical URL) */}
+        {mode === "url" && (
+          <>
+            <button
+              type="button"
+              onClick={() => void saveBrief()}
+              className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+              disabled={loading}
+            >
+              {loading ? "Saving…" : "Save"}
+            </button>
 
-        <button
-          type="button"
-          onClick={() => void testFetch()}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-          disabled={loading}
-        >
-          {loading ? "Testing…" : "Test Fetch"}
-        </button>
+            <button
+              type="button"
+              onClick={() => void testFetch()}
+              className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+              disabled={loading}
+            >
+              {loading ? "Testing…" : "Test Fetch"}
+            </button>
+          </>
+        )}
       </div>
 
       {/* [LABEL: ERROR STATE] */}
@@ -168,7 +221,7 @@ export default function BriefForm() {
       {/* [LABEL: BLOCKED SITE STATE] */}
       {out && "ok" in (out as any) && (out as ApiError).ok === false && (out as ApiError).error === "blocked_by_anti_bot" && (
         <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-500">
-          This site is blocking scraping (anti-bot). Try a different URL or your own data source.
+          This site is blocking scraping. Switch to <b>From HTML</b> and paste the page HTML, or try a different URL.
         </div>
       )}
 
@@ -185,16 +238,11 @@ export default function BriefForm() {
       {/* [LABEL: PREVIEW — CARD] */}
       {out && "url" in (out as ScrapeResult) && (() => {
         const o = out as ScrapeResult
-
-        // pretty URL without query string
         let pretty = o.url
         try {
           const u = new URL(o.url)
           pretty = u.origin + u.pathname
-        } catch {
-          /* ignore */
-        }
-
+        } catch {}
         return (
           <article className="rounded-xl border p-5 space-y-4">
             <header className="space-y-1">
