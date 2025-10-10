@@ -1,219 +1,263 @@
-// app/briefs/page.tsx
-// [LABEL: CLIENT PAGE — BRIEFS LIST WITH ACTIONS]
-"use client"
+"use client";
 
-// [LABEL: TOP IMPORTS]
-import * as React from "react"
+import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-// [LABEL: TYPES]
-type BriefRow = {
-  id: string
-  url: string
-  title?: string | null
-  description?: string | null
-  bullets?: string[] | null
-  text?: string | null
-  created_at: string
-}
+// --- shadcn/ui bits (adjust imports to your setup) ---
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/use-toast";
+import { Separator } from "@/components/ui/separator";
 
-// [LABEL: FETCH — LIST FUNCTION]
-async function fetchBriefs(limit = 20): Promise<BriefRow[]> {
-  const res = await fetch(`/api/brief/list?limit=${limit}`, { cache: "no-store" })
-  const json = await res.json()
-  if (!json.ok) throw new Error(json.error || "Failed to load")
-  return json.rows || []
-}
+// --- icons (lucide-react) ---
+import {
+  ClipboardCopy,
+  Check,
+  ExternalLink,
+  Trash2,
+  RefreshCcw,
+  Link as LinkIcon,
+  Search,
+} from "lucide-react";
 
-// [LABEL: DEFAULT EXPORT — PAGE COMPONENT]
+// --- Types ---
+type Brief = {
+  id: string;
+  url?: string | null;
+  title?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+// NOTE: This page assumes a GET list endpoint at /api/brief?list=1
+// and a DELETE endpoint at /api/brief?id=BRIEF_ID
+// Your existing app/api/brief/route.ts likely handles GET/DELETE;
+// if not, you can add simple handlers, but this UI will work as soon as
+// those endpoints return JSON arrays of briefs.
+
 export default function BriefsPage() {
-  // [LABEL: STATE]
-  const [rows, setRows] = React.useState<BriefRow[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [err, setErr] = React.useState<string | null>(null)
-  const [busyId, setBusyId] = React.useState<string | null>(null) // track which row is busy
+  const [briefs, setBriefs] = React.useState<Brief[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [query, setQuery] = React.useState("");
+  const [copyingId, setCopyingId] = React.useState<string | null>(null);
+  const router = useRouter();
+  const { toast } = useToast();
 
-  // [LABEL: EFFECT — INITIAL LOAD]
+  const fetchBriefs = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/brief?list=1", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: Brief[] = await res.json();
+      setBriefs(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
-    ;(async () => {
-      try {
-        setLoading(true)
-        setErr(null)
-        const data = await fetchBriefs(20)
-        setRows(data)
-      } catch (e: any) {
-        setErr(String(e?.message || e))
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [])
+    fetchBriefs();
+  }, [fetchBriefs]);
 
-  // [LABEL: HANDLER — REFRESH LIST]
-  const onRefresh = React.useCallback(async () => {
+  const onDelete = async (id: string) => {
     try {
-      setLoading(true)
-      setErr(null)
-      const data = await fetchBriefs(20)
-      setRows(data)
+      const res = await fetch(`/api/brief?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setBriefs((prev) => prev.filter((b) => b.id !== id));
+      toast({ title: "Deleted", description: `Brief ${id} removed.` });
     } catch (e: any) {
-      setErr(String(e?.message || e))
-    } finally {
-      setLoading(false)
+      toast({
+        title: "Delete failed",
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
     }
-  }, [])
+  };
 
-  // [LABEL: HANDLER — DELETE ONE]
-  const onDelete = React.useCallback(async (id: string) => {
-    if (!confirm("Delete this brief?")) return
+  const copyToClipboard = async (text: string) => {
     try {
-      setBusyId(id)
-      const res = await fetch(`/api/brief/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" })
-      const json = await res.json()
-      if (!json.ok) throw new Error(json.error || "Delete failed")
-      setRows((prev) => prev.filter((r) => r.id !== id))
-    } catch (e: any) {
-      alert(`Error: ${e?.message || e}`)
-    } finally {
-      setBusyId(null)
-    }
-  }, [])
-
-  // [LABEL: HANDLER — COPY LINK]
-  const onCopy = React.useCallback(async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url)
-      // simple visual confirm
-      alert("Link copied to clipboard.")
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch {
-      alert("Unable to copy link.")
+      // Fallback for older browsers
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        return true;
+      } catch {
+        return false;
+      }
     }
-  }, [])
+  };
 
-  // [LABEL: RENDER]
+  const onCopyId = async (id: string) => {
+    setCopyingId(id);
+    const ok = await copyToClipboard(id);
+    setCopyingId(null);
+    if (ok) {
+      toast({ title: "Copied", description: `ID ${id} copied to clipboard.` });
+    } else {
+      toast({
+        title: "Copy failed",
+        description: "Your browser blocked clipboard access.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const filtered = React.useMemo(() => {
+    if (!query.trim()) return briefs;
+    const q = query.toLowerCase();
+    return briefs.filter(
+      (b) =>
+        b.id.toLowerCase().includes(q) ||
+        (b.url ?? "").toLowerCase().includes(q) ||
+        (b.title ?? "").toLowerCase().includes(q)
+    );
+  }, [briefs, query]);
+
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-8 space-y-6">
-      {/* [LABEL: HEADER + REFRESH] */}
+    <div className="container mx-auto max-w-5xl py-8 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Briefs</h1>
-        <button
-          onClick={() => void onRefresh()}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
-        >
-          Refresh
-        </button>
+        <h1 className="text-2xl font-semibold tracking-tight">Briefs</h1>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => router.push("/dev")}>
+            <LinkIcon className="mr-2 h-4 w-4" />
+            Dev
+          </Button>
+          <Button onClick={fetchBriefs}>
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      {/* [LABEL: STATUS] */}
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {err && <p className="text-sm text-red-500">Error: {err}</p>}
-      {!loading && !err && rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">No briefs yet.</p>
-      )}
-
-      {/* [LABEL: LIST] */}
-      {rows.length > 0 && (
-        <ul className="space-y-4">
-          {rows.map((r) => {
-            // [LABEL: PRETTY URL — STRIP QUERY, SHOW CLEAN]
-            let pretty = r.url
-            try {
-              const u = new URL(r.url)
-              pretty = u.origin + u.pathname
-            } catch {/* ignore */}
-
-            return (
-              // [LABEL: CARD]
-              <li key={r.id} className="rounded-lg border p-4 overflow-hidden">
-                {/* [LABEL: CARD HEADER — META + ACTIONS] */}
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  {/* [LABEL: LEFT — TIME, TITLE, URL] */}
-                  <div className="min-w-0">
-                    <div className="text-sm text-muted-foreground">
-                      {new Date(r.created_at).toLocaleString()}
+      <Card className="border-muted">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-medium">
+            Recent Briefs
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <div className="relative w-full">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 opacity-60" />
+              <Input
+                className="pl-8"
+                placeholder="Filter by ID / URL / Title"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <Separator />
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-6 text-sm opacity-70">Loading…</div>
+          ) : error ? (
+            <div className="p-6 text-sm text-destructive">
+              Error: {error}. Try Refresh.
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-6 text-sm opacity-70">No briefs yet.</div>
+          ) : (
+            <ul className="divide-y">
+              {filtered.map((b) => (
+                <li key={b.id} className="p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    {/* Left: meta */}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="font-mono">
+                          {b.id.slice(0, 8)}…
+                        </Badge>
+                        {b.created_at && (
+                          <span className="text-xs opacity-70">
+                            {new Date(b.created_at).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      {b.title ? (
+                        <div className="mt-1 text-sm line-clamp-1">{b.title}</div>
+                      ) : null}
+                      {b.url ? (
+                        <div
+                          className="mt-1 text-xs opacity-80 break-words"
+                          title={b.url}
+                          style={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 1,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {b.url}
+                        </div>
+                      ) : null}
                     </div>
 
-                    <h2 className="text-lg font-medium break-words">
-                      {r.title || "(no title)"}
-                    </h2>
+                    {/* Right: actions */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {/* NEW: Open in /brief/[id] (explicit) */}
+                      <Button asChild variant="secondary" size="sm">
+                        <Link href={`/brief/${b.id}`} prefetch>
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Open
+                        </Link>
+                      </Button>
 
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block text-sm text-muted-foreground hover:underline truncate max-w-[65ch] sm:max-w-[80ch]"
-                      title={r.url}
-                    >
-                      {pretty}
-                    </a>
-                  </div>
+                      {/* NEW: Copy ID */}
+                      <Button
+                        size="sm"
+                        onClick={() => onCopyId(b.id)}
+                        disabled={copyingId === b.id}
+                        aria-label={`Copy ID ${b.id}`}
+                      >
+                        {copyingId === b.id ? (
+                          <Check className="mr-2 h-4 w-4" />
+                        ) : (
+                          <ClipboardCopy className="mr-2 h-4 w-4" />
+                        )}
+                        {copyingId === b.id ? "Copied" : "Copy ID"}
+                      </Button>
 
-                  {/* [LABEL: RIGHT — ID + ACTION BUTTONS] */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] text-muted-foreground select-all">{r.id}</span>
-
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-md border px-2 py-1 text-xs hover:bg-gray-100 dark:hover:bg-zinc-800"
-                      title="Open link"
-                    >
-                      Open
-                    </a>
-
-                    <button
-                      onClick={() => void onCopy(r.url)}
-                      className="rounded-md border px-2 py-1 text-xs hover:bg-gray-100 dark:hover:bg-zinc-800"
-                      title="Copy link"
-                    >
-                      Copy Link
-                    </button>
-
-                    <button
-                      onClick={() => void onDelete(r.id)}
-                      disabled={busyId === r.id}
-                      className="rounded-md border px-2 py-1 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-                      title="Delete"
-                    >
-                      {busyId === r.id ? "…" : "Delete"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* [LABEL: OPTIONAL CONTENT — DESCRIPTION] */}
-                {r.description && (
-                  <p className="mt-2 text-sm break-words">{r.description}</p>
-                )}
-
-                {/* [LABEL: OPTIONAL CONTENT — BULLETS] */}
-                {Array.isArray(r.bullets) && r.bullets.length > 0 && (
-                  <ul className="mt-2 list-disc pl-5 text-sm space-y-1">
-                    {r.bullets
-                      .map((b: string) => String(b).trim())
-                      .filter(Boolean)
-                      .slice(0, 10)
-                      .map((b: string, i: number) => (
-                        <li key={i} className="break-words">
-                          {b}
-                        </li>
-                      ))}
-                  </ul>
-                )}
-
-                {/* [LABEL: OPTIONAL CONTENT — FULL TEXT COLLAPSIBLE] */}
-                {r.text && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-sm underline">Show text</summary>
-                    <div className="mt-2 max-h-60 overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap break-words">
-                      {r.text}
+                      {/* Existing: Delete */}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => onDelete(b.id)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </Button>
                     </div>
-                  </details>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </main>
-  )
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <p className="text-xs opacity-60">
+        Tip: If a site blocks scraping (403), open the page, copy{" "}
+        <code className="font-mono">document.documentElement.outerHTML</code>, then use{" "}
+        <span className="font-medium">Brief &rarr; From HTML</span>.
+      </p>
+    </div>
+  );
 }
