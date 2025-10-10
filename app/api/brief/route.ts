@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 import { createClient } from "@supabase/supabase-js";
 
-// [LABEL: ADMIN CLIENT] (bypasses RLS; server-only envs with fallbacks)
+// [LABEL: ADMIN CLIENT] (server-only; bypasses RLS; env fallbacks supported)
 function admin() {
   const url =
     process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -72,7 +72,6 @@ function htmlToMarkdown(html: string) {
     else chunks.push(text);
   });
 
-  // title fallback from first heading/long chunk
   if (!title) {
     const candidate =
       $("h1").first().text().trim() ||
@@ -81,7 +80,6 @@ function htmlToMarkdown(html: string) {
     if (candidate) title = candidate.replace(/^#+\s*/, "").slice(0, 140);
   }
 
-  // if content thin, sample long divs too
   if (chunks.length < 6) {
     $("div").each((_, el) => {
       const t = $(el).text().replace(/\s+/g, " ").trim();
@@ -112,7 +110,6 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const listParam = searchParams.get("list");
-
   const db = admin();
 
   if (listParam) {
@@ -211,27 +208,31 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // B) From pasted HTML
+  // B) From pasted HTML → PREVIEW or SAVE
   if (html?.trim()) {
     let { title, markdown } = htmlToMarkdown(html);
 
+    // Preview only
     if (preview && !save) {
       return NextResponse.json({ title, markdown });
     }
 
+    // Save with NOT NULL url workaround
     if (save) {
       if (!title) title = "Untitled Brief";
+      const localUrl = "local://manual"; // <-- ensures url is NOT NULL
 
+      // Try full insert; fallback to minimal schema if body cols missing
       const full = await db
         .from("briefs")
-        .insert([{ url: null, title, markdown, html }])
+        .insert([{ url: localUrl, title, markdown, html }])
         .select("id")
         .single();
 
       if (full.error) {
         const minimal = await db
           .from("briefs")
-          .insert([{ url: null, title }])
+          .insert([{ url: localUrl, title }])
           .select("id")
           .single();
         if (minimal.error)
@@ -247,6 +248,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ id: full.data?.id, title, markdown });
     }
 
+    // Default echo
     return NextResponse.json({ title, markdown });
   }
 
