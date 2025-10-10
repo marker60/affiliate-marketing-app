@@ -35,3 +35,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local artifacts
+affiliate-marketing-app@0.1.0
+app/dev/page.backup.tsx
+main
+next
