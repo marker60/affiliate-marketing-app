@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
-import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
+// ── Supabase (server, cookie-aware) — required for RLS-protected tables ──────
 function sb() {
-  return createClient(
+  const cookieStore = cookies();
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false } }
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        // no-ops to satisfy the interface in route handlers
+        set() {},
+        remove() {},
+      },
+    }
   );
 }
 
-// Fallback title from URL when document has none
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function titleFromUrl(u?: string) {
   if (!u) return undefined;
   try {
@@ -21,10 +33,7 @@ function titleFromUrl(u?: string) {
       .replace(/[_\-+]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    // Capitalize words
-    return clean
-      ? clean.replace(/\b\w/g, (m) => m.toUpperCase()).slice(0, 140)
-      : url.hostname;
+    return clean ? clean.replace(/\b\w/g, (m) => m.toUpperCase()).slice(0, 140) : url.hostname;
   } catch {
     return undefined;
   }
@@ -95,7 +104,7 @@ function htmlToMarkdown(html: string) {
   return { title: title || undefined, markdown: md.trim() };
 }
 
-// GET: supports list=1|true or list=<number>
+// ── GET: list / single ───────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -105,7 +114,7 @@ export async function GET(req: NextRequest) {
   if (listParam) {
     const limit =
       /^(true|1)$/i.test(listParam) ? 50 : Math.max(1, Math.min(100, parseInt(listParam, 10) || 5));
-
+    // IMPORTANT: only select existing columns
     const { data, error } = await client
       .from("briefs")
       .select("id,url,title,created_at")
@@ -125,6 +134,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
+// ── DELETE ────────────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -137,6 +147,7 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
+// ── POST: URL or pasted HTML (preview / save) ────────────────────────────────
 export async function POST(req: NextRequest) {
   const client = sb();
   const body = await req.json().catch(() => ({}));
@@ -166,9 +177,9 @@ export async function POST(req: NextRequest) {
       }
       const pageHtml = await res.text();
       let { title, markdown } = htmlToMarkdown(pageHtml);
-      if (!title) title = titleFromUrl(url); // fallback
+      if (!title) title = titleFromUrl(url);
 
-      // Try full insert, then minimal if schema lacks columns
+      // Full insert (markdown/html). If schema is minimal, fall back to title/url only.
       const full = await client
         .from("briefs")
         .insert([{ url, title, markdown, html: pageHtml }])
@@ -201,7 +212,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (save) {
-      // No URL; synthesize a generic title if needed
       if (!title) title = "Untitled Brief";
 
       const full = await client
