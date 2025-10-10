@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 import { createClient } from "@supabase/supabase-js";
 
-// Cookie-less client avoids SSR auth quirks
 function sb() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,7 +10,26 @@ function sb() {
   );
 }
 
-// tolerant HTML → markdown + good title fallback
+// Fallback title from URL when document has none
+function titleFromUrl(u?: string) {
+  if (!u) return undefined;
+  try {
+    const url = new URL(u);
+    const seg = url.pathname.split("/").filter(Boolean).pop() || url.hostname;
+    const clean = decodeURIComponent(seg)
+      .replace(/\.(html?|php|aspx?)$/i, "")
+      .replace(/[_\-+]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    // Capitalize words
+    return clean
+      ? clean.replace(/\b\w/g, (m) => m.toUpperCase()).slice(0, 140)
+      : url.hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 function htmlToMarkdown(html: string) {
   const $raw = cheerio.load(html);
   $raw("script,noscript,style,template,iframe").remove();
@@ -31,8 +49,8 @@ function htmlToMarkdown(html: string) {
     "";
 
   const $ = cheerio.load(mainHtml);
-
   const chunks: string[] = [];
+
   $("h1,h2,h3,p,li,blockquote").each((_, el) => {
     const tag = $(el).prop("tagName")?.toLowerCase();
     const text = $(el).text().replace(/\s+\n/g, "\n").replace(/\s+/g, " ").trim();
@@ -44,18 +62,14 @@ function htmlToMarkdown(html: string) {
     else chunks.push(text);
   });
 
-  // If title missing, synthesize from first substantial chunk
   if (!title) {
     const candidate =
       $("h1").first().text().trim() ||
       $("h2").first().text().trim() ||
       (chunks.find((c) => c.length > 40) ?? "");
-    if (candidate) {
-      title = candidate.replace(/^#+\s*/, "").split(/\s+/).slice(0, 16).join(" ");
-    }
+    if (candidate) title = candidate.replace(/^#+\s*/, "").slice(0, 140);
   }
 
-  // If very little captured, sample long <div>s too
   if (chunks.length < 6) {
     $("div").each((_, el) => {
       const t = $(el).text().replace(/\s+/g, " ").trim();
@@ -81,21 +95,22 @@ function htmlToMarkdown(html: string) {
   return { title: title || undefined, markdown: md.trim() };
 }
 
-// ── GET ───────────────────────────────────────────────────────────────────────
+// GET: supports list=1|true or list=<number>
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  const list = searchParams.get("list");
-
+  const listParam = searchParams.get("list");
   const client = sb();
 
-  if (list && /^(1|true)$/i.test(list)) {
-    // ⚠ remove 'updated_at' to avoid 400 when column doesn't exist
+  if (listParam) {
+    const limit =
+      /^(true|1)$/i.test(listParam) ? 50 : Math.max(1, Math.min(100, parseInt(listParam, 10) || 5));
+
     const { data, error } = await client
       .from("briefs")
       .select("id,url,title,created_at")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(limit);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data ?? []);
@@ -110,7 +125,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// ── DELETE ────────────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -123,7 +137,6 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// ── POST ──────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const client = sb();
   const body = await req.json().catch(() => ({}));
@@ -134,7 +147,7 @@ export async function POST(req: NextRequest) {
     save?: boolean;
   };
 
-  // A) URL → fetch → parse → save
+  // A) From URL
   if (url?.trim()) {
     try {
       const res = await fetch(url, {
@@ -152,12 +165,10 @@ export async function POST(req: NextRequest) {
         );
       }
       const pageHtml = await res.text();
-      const { title, markdown } = htmlToMarkdown(pageHtml);
+      let { title, markdown } = htmlToMarkdown(pageHtml);
+      if (!title) title = titleFromUrl(url); // fallback
 
-      // Try full insert; if schema lacks columns, fall back to minimal
-      let id: string | undefined;
-      let errorMsg: string | undefined;
-
+      // Try full insert, then minimal if schema lacks columns
       const full = await client
         .from("briefs")
         .insert([{ url, title, markdown, html: pageHtml }])
@@ -165,35 +176,34 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (full.error) {
-        errorMsg = full.error.message;
         const minimal = await client
           .from("briefs")
           .insert([{ url, title }])
           .select("id")
           .single();
-        if (minimal.error) {
+        if (minimal.error)
           return NextResponse.json({ error: minimal.error.message }, { status: 500 });
-        }
-        id = minimal.data?.id;
-      } else {
-        id = full.data?.id;
+        return NextResponse.json({ id: minimal.data?.id, title, markdown, note: "Saved with minimal schema." });
       }
 
-      return NextResponse.json({ id, title, markdown, note: errorMsg && "Saved without body fields (schema minimal)." });
+      return NextResponse.json({ id: full.data?.id, title, markdown });
     } catch (e: any) {
       return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
     }
   }
 
-  // B) Pasted HTML
+  // B) From pasted HTML
   if (html?.trim()) {
-    const { title, markdown } = htmlToMarkdown(html);
+    let { title, markdown } = htmlToMarkdown(html);
 
     if (preview && !save) {
       return NextResponse.json({ title, markdown });
     }
+
     if (save) {
-      // Try full → fallback to minimal (url null)
+      // No URL; synthesize a generic title if needed
+      if (!title) title = "Untitled Brief";
+
       const full = await client
         .from("briefs")
         .insert([{ url: null, title, markdown, html }])
@@ -206,15 +216,14 @@ export async function POST(req: NextRequest) {
           .insert([{ url: null, title }])
           .select("id")
           .single();
-        if (minimal.error) {
+        if (minimal.error)
           return NextResponse.json({ error: minimal.error.message }, { status: 500 });
-        }
-        return NextResponse.json({ id: minimal.data?.id, title, markdown, note: "Saved without body fields (schema minimal)." });
+        return NextResponse.json({ id: minimal.data?.id, title, markdown, note: "Saved with minimal schema." });
       }
+
       return NextResponse.json({ id: full.data?.id, title, markdown });
     }
 
-    // default echo
     return NextResponse.json({ title, markdown });
   }
 
