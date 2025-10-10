@@ -1,288 +1,187 @@
-// app/api/brief/route.ts
-// [LABEL: RUNTIME + IMPORTS]
-export const runtime = "nodejs"
-import { NextResponse } from "next/server"
-import * as cheerio from "cheerio"
+import { NextRequest, NextResponse } from "next/server";
+import * as cheerio from "cheerio";
+import { createClient } from "@supabase/supabase-js";
 
-// [LABEL: TYPES]
-type ScrapeResult = {
-  url: string
-  title?: string
-  description?: string
-  bullets?: string[]
-  text?: string
-}
-type ErrorResult = {
-  ok: false
-  error: string
-  details?: string
-}
-type Result = ScrapeResult | ErrorResult
-
-// [LABEL: UA + HEADERS (PRIMARY/MOBILE)]
-const UA_DESKTOP =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-const UA_MOBILE =
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-
-const HEADERS_PRIMARY = (origin?: string) => ({
-  "user-agent": UA_DESKTOP,
-  accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-  "accept-language": "en-US,en;q=0.9",
-  ...(origin ? { referer: origin } : {}),
-})
-
-const HEADERS_FALLBACK = (origin?: string) => ({
-  "user-agent": UA_MOBILE,
-  accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-  "accept-language": "en-US,en;q=0.9",
-  "upgrade-insecure-requests": "1",
-  ...(origin ? { referer: origin } : {}),
-})
-
-// [LABEL: TRACKING PARAM KEYS — STRIP LIST]
-const TRACKING_KEYS = [
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_term",
-  "utm_content",
-  "gclid",
-  "fbclid",
-  "msclkid",
-  "cnxclid",
-  "mc_eid",
-  "irgwc",
-  "irclickid",
-  "affid",
-  "aff",
-  "ref",
-]
-
-// [LABEL: UTIL — STRIP TRACKING FROM URL]
-function stripTrackingParams(inputUrl: string): string {
-  try {
-    const u = new URL(inputUrl)
-    const hasTracking =
-      [...u.searchParams.keys()].some((k) => TRACKING_KEYS.includes(k.toLowerCase())) ||
-      u.search.includes("utm_")
-    if (hasTracking) u.search = ""
-    return u.toString()
-  } catch {
-    return inputUrl
-  }
+// ── supabase (no cookies; avoids 400s) ────────────────────────────────────────
+function sb() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
-// [LABEL: UTIL — SLEEP]
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+// ── HTML → markdown (more tolerant) ───────────────────────────────────────────
+function htmlToMarkdown(html: string) {
+  const $raw = cheerio.load(html);
 
-// [LABEL: UTIL — FETCH WITH TIMEOUT]
-async function fetchWithTimeout(url: string, headers: Record<string, string>, ms = 15000) {
-  const controller = new AbortController()
-  const t = setTimeout(() => controller.abort(), ms)
-  try {
-    return await fetch(url, {
-      headers,
-      signal: controller.signal,
-      redirect: "follow",
-      cache: "no-store",
-    })
-  } finally {
-    clearTimeout(t)
-  }
-}
+  // Clean noise early
+  $raw("script,noscript,style,template,iframe").remove();
 
-// [LABEL: DETECT BOT WALL (CONSERVATIVE)]
-function looksLikeAntiBot(html: string, title: string | undefined): boolean {
-  const h = html.toLowerCase()
-  const t = (title || "").toLowerCase()
-  const signals = [
-    /just a moment/.test(t),
-    /checking your browser/.test(t),
-    /robot check/.test(t),
-    /cf-browser-verification/.test(h),
-    /cf-chl/.test(h),
-    /challenge/.test(h) && /cloudflare/.test(h),
-    /perimeterx/.test(h) || /px-captcha/.test(h),
-    /g-recaptcha-response/.test(h),
-    /please enable cookies/.test(h),
-    /enable javascript/.test(h),
-  ]
-  const count = signals.filter(Boolean).length
-  if (count >= 2) return true
-  try {
-    const $ = cheerio.load(html)
-    const bodyText = $("body").text().replace(/\s+/g, " ").trim()
-    if (count === 1 && bodyText.length < 800 && html.length < 20000) return true
-  } catch {}
-  return false
-}
-
-// [LABEL: ACCESS-DENIED HEURISTIC]
-function isAccessDeniedLike(title: string | undefined, text: string) {
-  const t = (title || "").toLowerCase()
-  const b = text.toLowerCase()
-  return (
-    /access denied|forbidden|not authorized/.test(t + " " + b) ||
-    /robot|bot|automated|blocked/.test(b)
-  )
-}
-
-// [LABEL: PARSE HTML → RESULT]
-function parseHtml(url: string, html: string): ScrapeResult {
-  const $ = cheerio.load(html)
   const title =
-    $('meta[property="og:title"]').attr("content") ||
-    $("title").first().text()?.trim() ||
-    undefined
-  const description =
-    $('meta[name="description"]').attr("content") ||
-    $('meta[property="og:description"]').attr("content") ||
-    undefined
+    ($raw("title").first().text() || "").trim() ||
+    ($raw('meta[property="og:title"]').attr("content") || "").trim() ||
+    ($raw('meta[name="twitter:title"]').attr("content") || "").trim();
 
-  const bullets: string[] = []
-  $("li").each((_, li) => {
-    const s = $(li).text().replace(/\s+/g, " ").trim()
-    if (s && s.length > 1) bullets.push(s)
-  })
+  const metaDesc =
+    ($raw('meta[name="description"]').attr("content") || "").trim();
 
-  const bodyText = $("body").text().replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+  // Prefer article/main; fallback body
+  const mainHtml =
+    $raw("article").first().html() ??
+    $raw("main").first().html() ??
+    $raw('[role="main"]').first().html() ??
+    $raw("body").html() ??
+    "";
 
-  return {
-    url,
-    title,
-    description,
-    bullets: bullets.slice(0, 50),
-    text: bodyText.slice(0, 60_000),
+  const $ = cheerio.load(mainHtml);
+  const out: string[] = [];
+
+  // Headings, paragraphs, list items
+  $("h1,h2,h3,p,li,blockquote").each((_, el) => {
+    const tag = $(el).prop("tagName")?.toLowerCase();
+    const text = $(el).text().replace(/\s+\n/g, "\n").replace(/\s+/g, " ").trim();
+    if (!text) return;
+    if (tag === "h1") out.push(`# ${text}`);
+    else if (tag === "h2") out.push(`## ${text}`);
+    else if (tag === "h3") out.push(`### ${text}`);
+    else if (tag === "li") out.push(`- ${text}`);
+    else out.push(text);
+  });
+
+  // If very little was captured, also sample texty <div>s
+  if (out.length < 6) {
+    $("div").each((_, el) => {
+      const t = $(el).text().replace(/\s+/g, " ").trim();
+      if (t && t.length >= 80) out.push(t);
+    });
   }
+
+  // Links (append)
+  const links = new Set<string>();
+  $("a[href]").each((_, a) => {
+    const href = ($(a).attr("href") || "").trim();
+    const txt = $(a).text().replace(/\s+/g, " ").trim();
+    if (!href || /^(#|mailto:|javascript:)/i.test(href)) return;
+    links.add(txt ? `[${txt}](${href})` : `<${href}>`);
+  });
+
+  // Deduplicate, trim, and cap size
+  const uniq = Array.from(new Set(out)).slice(0, 400);
+  const md =
+    (title ? `# ${title}\n\n` : "") +
+    (metaDesc ? `> ${metaDesc}\n\n` : "") +
+    uniq.join("\n\n") +
+    (links.size ? `\n\n---\n**Links:**\n\n${[...links].slice(0, 100).join("\n")}\n` : "");
+
+  return { title: title || undefined, markdown: md.trim() };
 }
 
-// [LABEL: CORE — SCRAPE BY URL WITH RETRIES/STRIP]
-async function scrapeByUrl(url: string): Promise<Result> {
-  // referer
-  let referer: string | undefined
-  try {
-    const u = new URL(url)
-    referer = `${u.origin}/`
-  } catch {}
+// ── GET: list / single ────────────────────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  const list = searchParams.get("list");
 
-  const candidates = [url, stripTrackingParams(url)].filter((v, i, a) => a.indexOf(v) === i)
+  const client = sb();
 
-  for (const candidate of candidates) {
-    // Attempt A: desktop headers
-    let res: Response
+  // list=1 or list=true
+  if (list && /^(1|true)$/i.test(list)) {
+    const { data, error } = await client
+      .from("briefs")
+      .select("id,url,title,created_at,updated_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(data ?? []);
+  }
+
+  if (id) {
+    const { data, error } = await client.from("briefs").select("*").eq("id", id).single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 404 });
+    return NextResponse.json(data);
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+// ── DELETE: by id ─────────────────────────────────────────────────────────────
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  const client = sb();
+  const { error } = await client.from("briefs").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
+
+// ── POST: URL or pasted HTML (preview / save) ─────────────────────────────────
+export async function POST(req: NextRequest) {
+  const client = sb();
+  const body = await req.json().catch(() => ({}));
+  const { url, html, preview, save } = body as {
+    url?: string;
+    html?: string;
+    preview?: boolean;
+    save?: boolean;
+  };
+
+  // A) From URL → fetch → parse → save
+  if (url?.trim()) {
     try {
-      res = await fetchWithTimeout(candidate, HEADERS_PRIMARY(referer), 18000)
-    } catch {
-      continue
-    }
-
-    // Attempt B: 403/503 → try mobile headers
-    if (res.status === 403 || res.status === 503) {
-      await sleep(700)
-      try {
-        res = await fetchWithTimeout(candidate, HEADERS_FALLBACK(referer), 18000)
-      } catch {
-        continue
+      const res = await fetch(url, {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        return NextResponse.json(
+          { error: `Fetch failed: HTTP ${res.status}` },
+          { status: 502 }
+        );
       }
-    }
+      const pageHtml = await res.text();
+      const { title, markdown } = htmlToMarkdown(pageHtml);
 
-    const ctype = (res.headers.get("content-type") || "").toLowerCase()
-    const isHtmlLike = /text\/html|application\/xhtml\+xml/.test(ctype) || res.status === 403
+      const { data, error } = await client
+        .from("briefs")
+        .insert([{ url, title, markdown, html: pageHtml }])
+        .select("id")
+        .single();
 
-    let html = ""
-    if (isHtmlLike) {
-      try {
-        html = await res.text()
-      } catch {}
-    }
-
-    if (res.ok) {
-      const $ = cheerio.load(html || "")
-      const title =
-        $('meta[property="og:title"]').attr("content") ||
-        $("title").first().text()?.trim() ||
-        undefined
-      if (html && looksLikeAntiBot(html, title)) {
-        return { ok: false, error: "blocked_by_anti_bot", details: title || "interstitial" }
-      }
-      return parseHtml(candidate, html || "")
-    }
-
-    if (res.status === 403 && html) {
-      try {
-        const $ = cheerio.load(html)
-        const title =
-          $('meta[property="og:title"]').attr("content") || $("title").first().text()?.trim()
-        const bodyText = $("body").text().replace(/\s+/g, " ").trim()
-        if (!isAccessDeniedLike(title, bodyText) && bodyText.length > 1200 && !looksLikeAntiBot(html, title)) {
-          return parseHtml(candidate, html)
-        }
-      } catch {}
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ id: data?.id, title, markdown });
+    } catch (e: any) {
+      return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
     }
   }
 
-  return { ok: false, error: "http_403", details: "after retries" }
-}
+  // B) From pasted HTML
+  if (html?.trim()) {
+    const { title, markdown } = htmlToMarkdown(html);
 
-// [LABEL: CORE — SCRAPE BY RAW HTML (NO NETWORK)]
-async function scrapeByHtml(sourceUrl: string, html: string): Promise<Result> {
-  // We trust that the caller pasted the page HTML they loaded in a browser.
-  try {
-    return parseHtml(sourceUrl, html)
-  } catch (e: any) {
-    return { ok: false, error: "parse_error", details: String(e?.message || e) }
-  }
-}
+    if (preview && !save) {
+      return NextResponse.json({ title, markdown });
+    }
 
-// [LABEL: HANDLER — GET ?url=...]
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const url = searchParams.get("url")
-  if (!url) {
-    return NextResponse.json({ ok: false, error: "missing_url" }, { status: 400 })
-  }
-  const result = await scrapeByUrl(url)
-  const status =
-    "ok" in result && (result as ErrorResult).ok === false
-      ? result.error === "blocked_by_anti_bot"
-        ? 403
-        : result.error.startsWith("http_")
-        ? parseInt(result.error.slice(5)) || 500
-        : 500
-      : 200
-  return NextResponse.json(result, { status })
-}
+    if (save) {
+      const { data, error } = await client
+        .from("briefs")
+        .insert([{ url: null, title, markdown, html }])
+        .select("id")
+        .single();
 
-// [LABEL: HANDLER — POST {url?, html?}]
-export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}))
-  const url = (body?.url as string) || ""
-  const html = (body?.html as string) || ""
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ id: data?.id, title, markdown });
+    }
 
-  if (!url && !html) {
-    return NextResponse.json({ ok: false, error: "missing_url_or_html" }, { status: 400 })
+    return NextResponse.json({ title, markdown });
   }
 
-  let result: Result
-  if (html) {
-    // prefer raw HTML when provided (no network)
-    result = await scrapeByHtml(url || "about:blank", html)
-  } else {
-    result = await scrapeByUrl(url)
-  }
-
-  const status =
-    "ok" in result && (result as ErrorResult).ok === false
-      ? result.error === "blocked_by_anti_bot"
-        ? 403
-        : result.error.startsWith("http_")
-        ? parseInt(result.error.slice(5)) || 500
-        : 500
-      : 200
-  return NextResponse.json(result, { status })
+  return NextResponse.json({ error: "Provide { url } or { html }" }, { status: 400 });
 }
-
-// [LABEL: touch to trigger deploy]
