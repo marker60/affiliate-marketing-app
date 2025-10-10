@@ -105,7 +105,9 @@ export default function DashboardPage() {
               try {
                 const u = new URL(r.url)
                 pretty = u.origin + u.pathname
-              } catch {/* ignore */}
+              } catch {
+                /* ignore */
+              }
 
               return (
                 <li key={r.id} className="p-4 flex items-start justify-between gap-4">
