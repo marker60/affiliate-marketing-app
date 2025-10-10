@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Loader2, Save, Eye, Link as LinkIcon } from "lucide-react";
+import { Loader2, Save, Eye, Link as LinkIcon, Bug } from "lucide-react";
 
 export default function QuickBriefPage() {
   const router = useRouter();
@@ -28,39 +28,8 @@ export default function QuickBriefPage() {
   const [generating, setGenerating] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
-  const fetchFromUrl = async () => {
-    if (!url.trim()) {
-      toast({ title: "Missing URL", description: "Enter a URL first." });
-      return;
-    }
-    setFetching(true);
-    try {
-      const res = await fetch("/api/brief", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      if (data?.id) {
-        toast({ title: "Created", description: "Brief saved from URL." });
-        router.push(`/brief/${data.id}`);
-      } else {
-        toast({
-          title: "Fetched",
-          description: "API returned content but no id.",
-        });
-      }
-    } catch (e: any) {
-      toast({
-        title: "Fetch failed",
-        description: e?.message ?? "Unknown error",
-        variant: "destructive",
-      });
-    } finally {
-      setFetching(false);
-    }
-  };
+  // DEBUG: last server response
+  const [lastResponse, setLastResponse] = React.useState<any>(null);
 
   const previewFromHtml = async () => {
     if (!rawHtml.trim()) {
@@ -73,22 +42,20 @@ export default function QuickBriefPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ html: rawHtml, preview: true }),
+        cache: "no-store",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      setLastResponse({ status: res.status, data });
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
       setPreviewMd(data?.markdown ?? "");
-      if (!data?.markdown) {
-        toast({
-          title: "No preview",
-          description: "API did not return markdown; you can still Save.",
-        });
-      }
+      toast({ title: "Preview ready" });
     } catch (e: any) {
       toast({
         title: "Preview failed",
-        description: e?.message ?? "Unknown error",
+        description: String(e?.message || e),
         variant: "destructive",
       });
+      setPreviewMd("");
     } finally {
       setGenerating(false);
     }
@@ -105,22 +72,67 @@ export default function QuickBriefPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ html: rawHtml, save: true }),
+        cache: "no-store",
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      setLastResponse({ status: res.status, data });
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      if (!data?.id) throw new Error("API did not return a brief id.");
-      toast({ title: "Saved", description: "Brief created from HTML." });
-      router.push(`/brief/${data.id}`);
+
+      const id = data?.id as string | undefined;
+      if (!id) {
+        throw new Error(
+          `API returned 200 but no id. Payload: ${JSON.stringify(data).slice(0, 2000)}`
+        );
+      }
+      toast({ title: "Saved", description: `Brief ${id} created.` });
+      // Ensure navigation even if history behaves oddly
+      router.replace(`/brief/${id}`);
     } catch (e: any) {
       toast({
         title: "Save failed",
-        description:
-          e?.message ??
-          "Does the API handle { html, save:true }? If not, we’ll wire it next.",
+        description: String(e?.message || e),
         variant: "destructive",
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const fetchFromUrl = async () => {
+    const clean = url.trim();
+    if (!clean) {
+      toast({ title: "Missing URL", description: "Paste a URL first." });
+      return;
+    }
+    setFetching(true);
+    try {
+      const res = await fetch("/api/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: clean }),
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      setLastResponse({ status: res.status, data });
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      const id = data?.id as string | undefined;
+      if (!id) throw new Error("API did not return an id.");
+      toast({ title: "Saved", description: "Brief created from URL." });
+      router.replace(`/brief/${id}`);
+    } catch (e: any) {
+      toast({
+        title: "Fetch failed",
+        description: String(e?.message || e),
+        variant: "destructive",
+      });
+    } finally {
+      setFetching(false);
     }
   };
 
@@ -158,9 +170,6 @@ export default function QuickBriefPage() {
                   )}
                 </Button>
               </div>
-              <p className="text-xs opacity-70">
-                If a site blocks scraping (403), switch to the **From HTML** tab.
-              </p>
             </TabsContent>
 
             {/* FROM HTML */}
@@ -194,6 +203,15 @@ export default function QuickBriefPage() {
                     </>
                   )}
                 </Button>
+                {lastResponse ? (
+                  <span
+                    title={JSON.stringify(lastResponse, null, 2)}
+                    className="inline-flex items-center text-xs opacity-70"
+                  >
+                    <Bug className="mr-1 h-3 w-3" />
+                    API: {lastResponse.status}
+                  </span>
+                ) : null}
               </div>
 
               {previewMd ? (
