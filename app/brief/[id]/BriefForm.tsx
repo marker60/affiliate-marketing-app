@@ -4,6 +4,10 @@
 
 // [LABEL: TOP IMPORTS]
 import * as React from "react"
+// [LABEL: TOP IMPORTS — MARKDOWN]
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+
 
 // [LABEL: TYPES]
 type ScrapeResult = {
@@ -217,14 +221,34 @@ export default function BriefForm() {
               </ul>
             )}
 
-            {o.text && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-sm underline">Full text</summary>
-                <div className="mt-2 max-h-[24rem] overflow-auto rounded-md border p-3 text-sm whitespace-pre-wrap break-words">
-                  {o.text}
-                </div>
-              </details>
-            )}
+            {/* [LABEL: FULL TEXT — MARKDOWN RENDER] */}
+{o.text && (
+  <details className="mt-2">
+    <summary className="cursor-pointer text-sm underline">Full text (Markdown)</summary>
+    <div className="mt-2 max-h-[24rem] overflow-auto rounded-md border p-3 text-sm">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        // [LABEL: MARKDOWN STYLES]
+        components={{
+          h1: ({node, ...p}) => <h1 className="mt-3 text-xl font-semibold" {...p} />,
+          h2: ({node, ...p}) => <h2 className="mt-3 text-lg font-semibold" {...p} />,
+          h3: ({node, ...p}) => <h3 className="mt-3 font-semibold" {...p} />,
+          p:  ({node, ...p}) => <p className="mt-2 leading-relaxed" {...p} />,
+          ul: ({node, ...p}) => <ul className="mt-2 list-disc pl-5 space-y-1" {...p} />,
+          ol: ({node, ...p}) => <ol className="mt-2 list-decimal pl-5 space-y-1" {...p} />,
+          a:  ({node, ...p}) => <a className="underline" target="_blank" rel="noreferrer" {...p} />,
+          code: ({node, inline, ...p}) =>
+            inline
+              ? <code className="rounded bg-muted px-1 py-0.5" {...p} />
+              : <code className="block overflow-auto rounded bg-muted p-2 text-xs" {...p} />,
+        }}
+      >
+        {o.text}
+      </ReactMarkdown>
+    </div>
+  </details>
+)}
+
           </article>
         )
       })()}
