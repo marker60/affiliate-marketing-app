@@ -17,7 +17,8 @@ type ScrapeResult = {
   text?: string
 }
 type SaveResult = { ok: true; id: string }
-type BriefOut = ScrapeResult | SaveResult | null
+type ApiError = { ok: false; error: string; details?: string }
+type BriefOut = ScrapeResult | SaveResult | ApiError | null
 
 // [LABEL: DEFAULT EXPORT]
 export default function BriefForm() {
@@ -39,10 +40,7 @@ export default function BriefForm() {
   // [LABEL: ACTION — POST /api/brief {url}]
   const generateBrief = async () => {
     const u = url.trim()
-    if (!u) {
-      setErr("Please enter a URL.")
-      return
-    }
+    if (!u) return setErr("Please enter a URL.")
     try {
       setBusy(true)
       const res = await fetch("/api/brief", {
@@ -50,8 +48,12 @@ export default function BriefForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: u }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.message || json?.error || "Failed")
+      const json = (await res.json()) as ScrapeResult | ApiError
+      if (!res.ok || ("ok" in json && json.ok === false)) {
+        const e = json as ApiError
+        setOut(e)
+        throw new Error(e.error)
+      }
       setOut(json as ScrapeResult)
     } catch (e: any) {
       setErr(String(e?.message || e))
@@ -63,16 +65,17 @@ export default function BriefForm() {
   // [LABEL: ACTION — GET /api/brief/save?url=...]
   const saveBrief = async () => {
     const u = url.trim()
-    if (!u) {
-      setErr("Please enter a URL.")
-      return
-    }
+    if (!u) return setErr("Please enter a URL.")
     try {
       setBusy(true)
       const res = await fetch(`/api/brief/save?url=${encodeURIComponent(u)}`)
-      const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json?.error || "Save failed")
-      setOut(json as SaveResult) // { ok: true, id }
+      const json = (await res.json()) as SaveResult | ApiError
+      if (!res.ok || ("ok" in json && (json as any).ok === false)) {
+        const e = json as ApiError
+        setOut(e)
+        throw new Error(e.error)
+      }
+      setOut(json as SaveResult)
     } catch (e: any) {
       setErr(String(e?.message || e))
     } finally {
@@ -83,15 +86,16 @@ export default function BriefForm() {
   // [LABEL: ACTION — DEBUG GET /api/brief?url=...]
   const testFetch = async () => {
     const u = url.trim()
-    if (!u) {
-      setErr("Please enter a URL.")
-      return
-    }
+    if (!u) return setErr("Please enter a URL.")
     try {
       setBusy(true)
       const res = await fetch(`/api/brief?url=${encodeURIComponent(u)}`, { cache: "no-store" })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.message || json?.error || "Fetch failed")
+      const json = (await res.json()) as ScrapeResult | ApiError
+      if (!res.ok || ("ok" in json && json.ok === false)) {
+        const e = json as ApiError
+        setOut(e)
+        throw new Error(e.error)
+      }
       setOut(json as ScrapeResult)
     } catch (e: any) {
       setErr(String(e?.message || e))
@@ -158,6 +162,13 @@ export default function BriefForm() {
       {err && (
         <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-500">
           Error: {err}
+        </div>
+      )}
+
+      {/* [LABEL: BLOCKED SITE STATE] */}
+      {out && "ok" in (out as any) && (out as ApiError).ok === false && (out as ApiError).error === "blocked_by_anti_bot" && (
+        <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-500">
+          This site is blocking scraping (anti-bot). Try a different URL or your own data source.
         </div>
       )}
 
