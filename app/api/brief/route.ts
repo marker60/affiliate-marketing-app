@@ -1,5 +1,4 @@
 // app/api/brief/route.ts
-
 // [LABEL: RUNTIME + IMPORTS]
 export const runtime = "nodejs"
 import { NextResponse } from "next/server"
@@ -19,28 +18,43 @@ type ErrorResult = {
   details?: string
 }
 
-// [LABEL: CONSTANTS — REQUEST HEADERS + TIMEOUT]
-const DEFAULT_UA =
+// [LABEL: CONSTANTS — PRIMARY + FALLBACK REQUEST HEADERS]
+const UA_DESKTOP =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-const DEFAULT_HEADERS = {
-  "user-agent": DEFAULT_UA,
+const UA_MOBILE =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+
+const HEADERS_PRIMARY = (origin?: string) => ({
+  "user-agent": UA_DESKTOP,
   accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
   "accept-language": "en-US,en;q=0.9",
-}
+  ...(origin ? { referer: origin } : {}),
+})
+
+const HEADERS_FALLBACK = (origin?: string) => ({
+  "user-agent": UA_MOBILE,
+  accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "accept-language": "en-US,en;q=0.9",
+  "upgrade-insecure-requests": "1",
+  ...(origin ? { referer: origin } : {}),
+})
+
+// [LABEL: UTILS — TINY SLEEP]
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // [LABEL: UTILS — FETCH WITH TIMEOUT]
-async function fetchWithTimeout(url: string, ms = 15000): Promise<Response> {
+async function fetchWithTimeout(url: string, headers: Record<string, string>, ms = 15000) {
   const controller = new AbortController()
   const t = setTimeout(() => controller.abort(), ms)
   try {
-    const res = await fetch(url, {
-      headers: DEFAULT_HEADERS,
+    return await fetch(url, {
+      headers,
       signal: controller.signal,
       redirect: "follow",
       cache: "no-store",
     })
-    return res
   } finally {
     clearTimeout(t)
   }
@@ -58,29 +72,25 @@ function looksLikeAntiBot(html: string, title: string | undefined): boolean {
     /robot check/.test(t),
     /cf-browser-verification/.test(h),
     /cf-chl/.test(h),
-    /cloudflare/.test(h) && /challenge/i.test(h),
+    /challenge/.test(h) && /cloudflare/.test(h),
     /perimeterx/.test(h) || /px-captcha/.test(h),
     /g-recaptcha-response/.test(h),
-    /please enable cookies/.test(h) || /enable javascript/.test(h),
+    /please enable cookies/.test(h),
+    /enable javascript/.test(h),
   ]
 
   const count = signals.filter(Boolean).length
-
-  // Heuristic:
-  // - strong: >= 2 signals → clearly a wall
-  // - weak: 1 signal *and* page has very little human-readable text
   if (count >= 2) return true
 
-  // quick lightweight text size check
+  // weak signal + tiny page → likely interstitial
   try {
     const $ = cheerio.load(html)
     const bodyText = $("body").text().replace(/\s+/g, " ").trim()
     const textLen = bodyText.length
     const htmlLen = html.length
-    // very little visible text & not a huge HTML → likely interstitial
     if (count === 1 && textLen < 800 && htmlLen < 20000) return true
   } catch {
-    // ignore parsing errors; fall through to "not anti-bot"
+    /* ignore */
   }
 
   return false
@@ -107,44 +117,95 @@ function parseHtml(url: string, html: string): ScrapeResult {
   })
 
   const bodyText = $("body").text().replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+
   return {
     url,
     title,
     description,
     bullets: bullets.slice(0, 50),
-    text: bodyText.slice(0, 60_000), // keep result light
+    text: bodyText.slice(0, 60_000),
   }
 }
 
-// [LABEL: CORE — SCRAPE URL OR SURFACE ERROR]
+// [LABEL: HEURISTIC — IS ACCESS-DENIED PAGE]
+function isAccessDeniedLike(title: string | undefined, text: string) {
+  const t = (title || "").toLowerCase()
+  const b = text.toLowerCase()
+  return (
+    /access denied|forbidden|not authorized/.test(t + " " + b) ||
+    /robot|bot|automated|blocked/.test(b)
+  )
+}
+
+// [LABEL: CORE — TRY SCRAPE WITH RETRIES + PARSE-ON-403]
 async function scrape(url: string): Promise<ScrapeResult | ErrorResult> {
+  // derive referer from origin when possible
+  let referer: string | undefined
+  try {
+    const u = new URL(url)
+    referer = `${u.origin}/`
+  } catch {
+    /* ignore */
+  }
+
+  // Attempt 1: desktop headers
   let res: Response
   try {
-    res = await fetchWithTimeout(url, 18000)
+    res = await fetchWithTimeout(url, HEADERS_PRIMARY(referer), 18000)
   } catch (e: any) {
     return { ok: false, error: "network_timeout", details: String(e?.message || e) }
   }
 
+  // Retry on 403/503 with mobile-ish headers + slight delay
+  if (res.status === 403 || res.status === 503) {
+    await sleep(800)
+    try {
+      res = await fetchWithTimeout(url, HEADERS_FALLBACK(referer), 18000)
+    } catch (e: any) {
+      return { ok: false, error: "network_timeout", details: String(e?.message || e) }
+    }
+  }
+
+  // If still not ok, we may still try to parse if HTML looks real
+  const ctype = (res.headers.get("content-type") || "").toLowerCase()
+  const isHtmlLike = /text\/html|application\/xhtml\+xml/.test(ctype) || res.status === 403
+
+  let html = ""
+  if (isHtmlLike) {
+    try {
+      html = await res.text()
+    } catch {
+      /* ignore */
+    }
+  }
+
   if (!res.ok) {
-    return { ok: false, error: `http_${res.status}`, details: await safeText(res) }
+    // try to salvage if it looks like a real page, not a wall
+    if (html) {
+      let title: string | undefined
+      let textLen = 0
+      try {
+        const $ = cheerio.load(html)
+        title = $('meta[property="og:title"]').attr("content") || $("title").first().text()?.trim()
+        const bodyText = $("body").text().replace(/\s+/g, " ").trim()
+        textLen = bodyText.length
+        if (!isAccessDeniedLike(title, bodyText) && textLen > 1200) {
+          // looks like a real page → parse anyway
+          return parseHtml(url, html)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return { ok: false, error: `http_${res.status}`, details: html ? "" : "no_html" }
   }
 
-  // content type that isn't HTML?
-  const ctype = res.headers.get("content-type") || ""
-  if (!/text\/html|application\/xhtml\+xml/i.test(ctype)) {
-    // still try to treat as HTML; some sites mislabel
-  }
-
-  const html = await res.text()
-
-  // parse preliminary title for detector
-  let title: string | undefined
-  try {
-    const $ = cheerio.load(html)
-    title = $('meta[property="og:title"]').attr("content") || $("title").first().text()?.trim()
-  } catch {
-    /* ignore; detection falls back to html-only checks */
-  }
+  // Normal success path
+  const $ = cheerio.load(html || (await res.text()))
+  const title =
+    $('meta[property="og:title"]').attr("content") ||
+    $("title").first().text()?.trim() ||
+    undefined
 
   if (looksLikeAntiBot(html, title)) {
     return { ok: false, error: "blocked_by_anti_bot", details: title || "interstitial" }
@@ -153,22 +214,13 @@ async function scrape(url: string): Promise<ScrapeResult | ErrorResult> {
   return parseHtml(url, html)
 }
 
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text()
-  } catch {
-    return ""
-  }
-}
-
-// [LABEL: HANDLER — GET ?url=...]
+// [LABEL: HANDLERS]
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const url = searchParams.get("url")
   if (!url) {
     return NextResponse.json({ ok: false, error: "missing_url" }, { status: 400 })
   }
-
   const result = await scrape(url)
   if ("ok" in result && result.ok === false) {
     const status =
@@ -178,18 +230,15 @@ export async function GET(req: Request) {
       500
     return NextResponse.json(result, { status })
   }
-
   return NextResponse.json(result as ScrapeResult, { status: 200 })
 }
 
-// [LABEL: HANDLER — POST {url}]
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
-  const url = body?.url as string | undefined
+  const url = (body?.url as string) || ""
   if (!url) {
     return NextResponse.json({ ok: false, error: "missing_url" }, { status: 400 })
   }
-
   const result = await scrape(url)
   if ("ok" in result && result.ok === false) {
     const status =
@@ -199,8 +248,5 @@ export async function POST(req: Request) {
       500
     return NextResponse.json(result, { status })
   }
-
   return NextResponse.json(result as ScrapeResult, { status: 200 })
 }
-
-// [LABEL: touched to trigger deploy]
