@@ -1,47 +1,45 @@
 // app/layout.tsx
-import "./globals.css";
-import type { Metadata } from "next";
-import { ThemeProvider } from "@/components/theme-provider";
-
-// [LABEL: TOP IMPORTS — NAV]
+// [LABEL: TOP IMPORTS]
+import "./globals.css"
+import type { Metadata } from "next"
 import Link from "next/link"
-// [LABEL: TOP IMPORTS — THEME TOGGLE]  (skip if you already have it)
-import { ThemeToggle } from "@/components/theme-toggle"
+import { ThemeProvider } from "next-themes" // using next-themes (already installed)
+import { ThemeToggle } from "@/components/theme-toggle" // your toggle component
 
-
+// [LABEL: METADATA]
 export const metadata: Metadata = {
   title: "Affiliate Marketing App",
   description: "Create and manage affiliate projects and briefs.",
-};
+}
 
+// [LABEL: DEFAULT EXPORT — ROOT LAYOUT]
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      {/* [LABEL: BODY — BASE CLASSES] */}
       <body className="min-h-screen bg-background text-foreground antialiased">
-        <ThemeProvider>
-          {/* Temporary placement so you can see it working right away */}
-          <div className="p-3 border-b">
-            <span className="text-xs text-muted-foreground">Theme</span>
+        {/* [LABEL: THEME PROVIDER] */}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          {/* [LABEL: HEADER — APP NAV + THEME] */}
+          <header className="flex items-center justify-between gap-4 border-b px-4 py-3">
+            {/* [LABEL: BRAND] */}
+            <div className="text-sm font-medium">Affiliate Marketing App</div>
 
-          </div>
-{/* [LABEL: JSX INSERT — HEADER START] */}
-<header className="flex items-center justify-between gap-4 border-b px-4 py-3">
-  <div className="text-sm font-medium">Affiliate Marketing App</div>
+            {/* [LABEL: NAV LINKS] */}
+            <nav className="flex items-center gap-4 text-sm">
+              <Link href="/">Home</Link>
+              <Link href="/dev">Dev</Link>
+              <Link href="/briefs">Briefs</Link>
+            </nav>
 
-  {/* simple nav */}
-  <nav className="flex items-center gap-4 text-sm">
-    <Link href="/">Home</Link>
-    <Link href="/dev">Dev</Link>
-    <Link href="/briefs">Briefs</Link>
-  </nav>
+            {/* [LABEL: THEME TOGGLE] */}
+            <ThemeToggle />
+          </header>
 
-  <ThemeToggle />
-</header>
-{/* [LABEL: JSX INSERT — HEADER END] */}
-
+          {/* [LABEL: PAGE CONTENT] */}
           {children}
         </ThemeProvider>
       </body>
     </html>
-  );
+  )
 }
