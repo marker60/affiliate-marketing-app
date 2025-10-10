@@ -1,4 +1,5 @@
 // app/api/brief/route.ts
+
 // [LABEL: RUNTIME + IMPORTS]
 export const runtime = "nodejs"
 import { NextResponse } from "next/server"
@@ -45,20 +46,44 @@ async function fetchWithTimeout(url: string, ms = 15000): Promise<Response> {
   }
 }
 
-// [LABEL: DETECT ANTI-BOT / INTERSTITIAL]
+// [LABEL: DETECT ANTI-BOT / INTERSTITIAL (CONSERVATIVE)]
 function looksLikeAntiBot(html: string, title: string | undefined): boolean {
   const h = html.toLowerCase()
   const t = (title || "").toLowerCase()
-  // Common indicators (Cloudflare / perimeterX / captcha walls)
-  return (
-    t.includes("just a moment") ||
-    h.includes("cf-browser-verification") ||
-    h.includes("cf-chl") ||
-    h.includes("captcha") ||
-    t.includes("checking your browser") ||
-    h.includes("perimeterx") ||
-    t.includes("robot check")
-  )
+
+  // individual signals
+  const signals = [
+    /just a moment/.test(t),
+    /checking your browser/.test(t),
+    /robot check/.test(t),
+    /cf-browser-verification/.test(h),
+    /cf-chl/.test(h),
+    /cloudflare/.test(h) && /challenge/i.test(h),
+    /perimeterx/.test(h) || /px-captcha/.test(h),
+    /g-recaptcha-response/.test(h),
+    /please enable cookies/.test(h) || /enable javascript/.test(h),
+  ]
+
+  const count = signals.filter(Boolean).length
+
+  // Heuristic:
+  // - strong: >= 2 signals → clearly a wall
+  // - weak: 1 signal *and* page has very little human-readable text
+  if (count >= 2) return true
+
+  // quick lightweight text size check
+  try {
+    const $ = cheerio.load(html)
+    const bodyText = $("body").text().replace(/\s+/g, " ").trim()
+    const textLen = bodyText.length
+    const htmlLen = html.length
+    // very little visible text & not a huge HTML → likely interstitial
+    if (count === 1 && textLen < 800 && htmlLen < 20000) return true
+  } catch {
+    // ignore parsing errors; fall through to "not anti-bot"
+  }
+
+  return false
 }
 
 // [LABEL: HTML → SCRAPE RESULT]
@@ -104,12 +129,22 @@ async function scrape(url: string): Promise<ScrapeResult | ErrorResult> {
     return { ok: false, error: `http_${res.status}`, details: await safeText(res) }
   }
 
+  // content type that isn't HTML?
+  const ctype = res.headers.get("content-type") || ""
+  if (!/text\/html|application\/xhtml\+xml/i.test(ctype)) {
+    // still try to treat as HTML; some sites mislabel
+  }
+
   const html = await res.text()
-  const $ = cheerio.load(html)
-  const title =
-    $('meta[property="og:title"]').attr("content") ||
-    $("title").first().text()?.trim() ||
-    undefined
+
+  // parse preliminary title for detector
+  let title: string | undefined
+  try {
+    const $ = cheerio.load(html)
+    title = $('meta[property="og:title"]').attr("content") || $("title").first().text()?.trim()
+  } catch {
+    /* ignore; detection falls back to html-only checks */
+  }
 
   if (looksLikeAntiBot(html, title)) {
     return { ok: false, error: "blocked_by_anti_bot", details: title || "interstitial" }
