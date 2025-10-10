@@ -8,7 +8,6 @@ import * as React from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
-
 // [LABEL: TYPES]
 type ScrapeResult = {
   url: string
@@ -90,9 +89,7 @@ export default function BriefForm() {
     }
     try {
       setBusy(true)
-      const res = await fetch(`/api/brief?url=${encodeURIComponent(u)}`, {
-        cache: "no-store",
-      })
+      const res = await fetch(`/api/brief?url=${encodeURIComponent(u)}`, { cache: "no-store" })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.message || json?.error || "Fetch failed")
       setOut(json as ScrapeResult)
@@ -109,7 +106,6 @@ export default function BriefForm() {
       className="mx-auto w-full max-w-3xl space-y-4"
       onSubmit={(e) => {
         e.preventDefault()
-        // Explicitly ignore the Promise to keep TS happy
         void generateBrief()
       }}
     >
@@ -165,20 +161,21 @@ export default function BriefForm() {
         </div>
       )}
 
-{/* [LABEL: SUCCESS — SAVED LINK] */}
-{out && "ok" in (out as any) && (out as any).ok === true && (
-  <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
-    Saved!{" "}
-    <a href="/briefs" className="underline">
-      View in Briefs
-    </a>
-  </div>
-)}
+      {/* [LABEL: SUCCESS — SAVED LINK] */}
+      {out && "ok" in (out as any) && (out as any).ok === true && (
+        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+          Saved!{" "}
+          <a href="/briefs" className="underline">
+            View in Briefs
+          </a>
+        </div>
+      )}
 
-
-      {/* [LABEL: PREVIEW — CARD V2] */}
+      {/* [LABEL: PREVIEW — CARD] */}
       {out && "url" in (out as ScrapeResult) && (() => {
         const o = out as ScrapeResult
+
+        // pretty URL without query string
         let pretty = o.url
         try {
           const u = new URL(o.url)
@@ -186,6 +183,7 @@ export default function BriefForm() {
         } catch {
           /* ignore */
         }
+
         return (
           <article className="rounded-xl border p-5 space-y-4">
             <header className="space-y-1">
@@ -222,33 +220,42 @@ export default function BriefForm() {
             )}
 
             {/* [LABEL: FULL TEXT — MARKDOWN RENDER] */}
-{o.text && (
-  <details className="mt-2">
-    <summary className="cursor-pointer text-sm underline">Full text (Markdown)</summary>
-    <div className="mt-2 max-h-[24rem] overflow-auto rounded-md border p-3 text-sm">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        // [LABEL: MARKDOWN STYLES]
-        components={{
-          h1: ({node, ...p}) => <h1 className="mt-3 text-xl font-semibold" {...p} />,
-          h2: ({node, ...p}) => <h2 className="mt-3 text-lg font-semibold" {...p} />,
-          h3: ({node, ...p}) => <h3 className="mt-3 font-semibold" {...p} />,
-          p:  ({node, ...p}) => <p className="mt-2 leading-relaxed" {...p} />,
-          ul: ({node, ...p}) => <ul className="mt-2 list-disc pl-5 space-y-1" {...p} />,
-          ol: ({node, ...p}) => <ol className="mt-2 list-decimal pl-5 space-y-1" {...p} />,
-          a:  ({node, ...p}) => <a className="underline" target="_blank" rel="noreferrer" {...p} />,
-          code: ({node, inline, ...p}) =>
-            inline
-              ? <code className="rounded bg-muted px-1 py-0.5" {...p} />
-              : <code className="block overflow-auto rounded bg-muted p-2 text-xs" {...p} />,
-        }}
-      >
-        {o.text}
-      </ReactMarkdown>
-    </div>
-  </details>
-)}
-
+            {o.text && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-sm underline">Full text (Markdown)</summary>
+                <div className="mt-2 max-h-[24rem] overflow-auto rounded-md border p-3 text-sm">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({ node, ...p }) => <h1 className="mt-3 text-xl font-semibold" {...p} />,
+                      h2: ({ node, ...p }) => <h2 className="mt-3 text-lg font-semibold" {...p} />,
+                      h3: ({ node, ...p }) => <h3 className="mt-3 font-semibold" {...p} />,
+                      p: ({ node, ...p }) => <p className="mt-2 leading-relaxed" {...p} />,
+                      ul: ({ node, ...p }) => <ul className="mt-2 list-disc pl-5 space-y-1" {...p} />,
+                      ol: ({ node, ...p }) => <ol className="mt-2 list-decimal pl-5 space-y-1" {...p} />,
+                      a: ({ node, ...p }) => (
+                        <a className="underline" target="_blank" rel="noreferrer" {...p} />
+                      ),
+                      code: ({ node, children, ...p }) => {
+                        const text = String(children ?? "")
+                        const isBlock = text.includes("\n")
+                        return isBlock ? (
+                          <code className="block overflow-auto rounded bg-muted p-2 text-xs" {...p}>
+                            {text}
+                          </code>
+                        ) : (
+                          <code className="rounded bg-muted px-1 py-0.5" {...p}>
+                            {text}
+                          </code>
+                        )
+                      },
+                    }}
+                  >
+                    {o.text}
+                  </ReactMarkdown>
+                </div>
+              </details>
+            )}
           </article>
         )
       })()}
