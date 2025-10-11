@@ -1,29 +1,44 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
+/**
+ * Create a brief by posting to our API.
+ * Expects a <form> that sends: title, html_raw, and optional source_url/url.
+ */
 export async function generateBrief(formData: FormData) {
-  const projectId = String(formData.get("projectId") || "");
-  const productUrlRaw = String(formData.get("productUrl") || "").trim();
-  if (!projectId || !productUrlRaw) redirect(`/brief/${projectId}?error=missing_inputs`);
-  const productUrl = /^https?:\/\//i.test(productUrlRaw) ? productUrlRaw : `https://${productUrlRaw}`;
+  const title = (formData.get("title") as string) || "";
+  const html_raw = (formData.get("html_raw") as string) || "";
+  const source_url = (formData.get("source_url") as string) || null;
+  const url = (formData.get("url") as string) || null;
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "";
+  const res = await fetch(`${base}/api/brief/create`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title, html_raw, source_url, url }),
+    cache: "no-store",
+  });
 
-  const brief = `SEO Brief:\nSource: ${productUrl}\n\nOutline:\nIntro\nKey Features\nPros & Cons\nFAQ\nVerdict`;
-  const draft = `Disclosure: This page uses affiliate links.\n\nPros:\n- Example\n\nCons:\n- Example\n\nKey FAQ:\n- Example`;
-
-  const { data: existing } = await supabase
-    .from("pages").select("id").eq("project_id", projectId)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
-
-  if (existing?.id) {
-    await supabase.from("pages").update({ url: productUrl, brief, draft }).eq("id", existing.id);
-  } else {
-    await supabase.from("pages").insert({ project_id: projectId, url: productUrl, brief, draft });
+  if (!res.ok) {
+    // On failure, go back to list; the page can show a toast if you wire one up.
+    redirect("/brief");
   }
-  redirect(`/brief/${projectId}`);
+
+  const { id } = await res.json();
+  redirect(`/brief/${id}`);
+}
+
+/**
+ * Delete a brief and return to list.
+ */
+export async function deleteBrief(id: string) {
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "";
+  await fetch(`${base}/api/brief/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id }),
+    cache: "no-store",
+  });
+  redirect("/brief");
 }
