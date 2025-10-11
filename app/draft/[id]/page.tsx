@@ -1,54 +1,59 @@
-// app/draft/[id]/page.tsx
+import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { notFound } from "next/navigation";
+import { getSupabaseServer } from "@/lib/supabase/server";
+
+type Draft = {
+  id: string;
+  title: string | null;
+  content_markdown: string | null; // adjust if your column name differs
+  updated_at: string | null;
+};
 
 export default async function DraftPage({
   params,
 }: {
   params: { id: string };
 }) {
-  const supabase = await createClient();
+  const supabase = getSupabaseServer();
 
   const { data, error } = await supabase
-    .from("pages")
-    .select("draft,title,project_id")
+    .from("drafts")
+    .select("id,title,content_markdown,updated_at")
     .eq("id", params.id)
-    .single();
+    .single<Draft>();
 
   if (error || !data) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="text-2xl font-bold">Draft not found</h1>
-        <p className="mt-2 text-muted-foreground">{error?.message}</p>
-        <Link href="/dashboard" className="mt-6 inline-block underline">
-          Back to Dashboard
-        </Link>
-      </main>
-    );
+    // If the record isn't found, render Next's 404 page
+    return notFound();
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <h1 className="mb-4 text-3xl font-bold">
-        {data.title ?? "Draft Preview"}
-      </h1>
-
-      <article className="prose prose-neutral max-w-none">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {data.draft ?? ""}
-        </ReactMarkdown>
-      </article>
-
-      <div className="mt-8">
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">{data.title ?? "Untitled draft"}</h1>
         <Link
-          href={`/export/${params.id}`}
-          className="underline"
+          href="/dashboard"
+          className="text-sm px-3 py-1 rounded border border-zinc-700 hover:bg-zinc-800"
         >
-          Go to Export
+          Back to Dashboard
         </Link>
       </div>
-    </main>
+
+      <div className="text-xs text-zinc-400">
+        Last updated:{" "}
+        {data.updated_at
+          ? new Date(data.updated_at).toLocaleString()
+          : "unknown"}
+      </div>
+
+      <article className="prose prose-invert max-w-none">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {data.content_markdown ?? "_No content_"}
+        </ReactMarkdown>
+      </article>
+    </div>
   );
 }
