@@ -1,19 +1,20 @@
-import { NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs"
-export const dynamic = "force-dynamic"
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const limit = Number(searchParams.get("limit") || 10)
+const TABLE = "briefs";
 
+export async function GET() {
   const { data, error } = await supabase
-    .from("briefs")
-    .select("*")
+    .from(TABLE)
+    .select("id, created_at, title, source_url, url")
     .order("created_at", { ascending: false })
-    .limit(Math.min(Math.max(limit, 1), 50))
+    .limit(100);
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, rows: data })
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json({ data: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
