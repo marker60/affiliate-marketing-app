@@ -1,43 +1,47 @@
-import { createClient } from "@/lib/supabase/server"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { redirect } from "next/navigation"
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
-export async function Nav() {
-  const supabase = await createClient()
+// Server action: sign out then go home
+async function signOutAction() {
+  "use server";
+  const supabase = getSupabaseServer();
+  await supabase.auth.signOut();
+  redirect("/");
+}
+
+export default async function Nav() {
+  const supabase = getSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser()
-
-  const handleSignOut = async () => {
-    "use server"
-    const supabase = await createClient()
-    await supabase.auth.signOut()
-    redirect("/")
-  }
+  } = await supabase.auth.getUser();
 
   return (
-    <header className="border-b">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <Link href="/dashboard" className="text-xl font-semibold">
-          App
-        </Link>
-        <nav className="flex items-center gap-4">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/dashboard">Dashboard</Link>
+    <nav className="flex items-center gap-3">
+      <Link href="/" className="hover:underline">
+        Home
+      </Link>
+      <Link href="/dev" className="hover:underline">
+        Dev
+      </Link>
+      <Link href="/brief" className="hover:underline">
+        Briefs
+      </Link>
+
+      <div className="ml-3" />
+
+      {user ? (
+        <form action={signOutAction}>
+          <Button variant="outline" size="sm" type="submit">
+            Sign out
           </Button>
-          {user && (
-            <>
-              <span className="text-sm text-muted-foreground">{user.email}</span>
-              <form action={handleSignOut}>
-                <Button type="submit" variant="outline" size="sm">
-                  Sign out
-                </Button>
-              </form>
-            </>
-          )}
-        </nav>
-      </div>
-    </header>
-  )
+        </form>
+      ) : (
+        <Link href="/login">
+          <Button variant="outline" size="sm">Sign in</Button>
+        </Link>
+      )}
+    </nav>
+  );
 }
