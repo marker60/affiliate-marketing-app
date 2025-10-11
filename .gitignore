@@ -41,3 +41,5 @@ affiliate-marketing-app@0.1.0
 app/dev/page.backup.tsx
 main
 next
+
+.vercel
