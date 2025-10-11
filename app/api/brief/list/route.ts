@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const TABLE = "briefs";
+import { createClient } from "@/utils/supabase/server"; // <- your server supabase helper
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("id, created_at, title, source_url, url")
-    .order("created_at", { ascending: false })
-    .limit(100);
+  try {
+    const supabase = createClient();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ data: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
+    const { data, error } = await supabase
+      .from("briefs")
+      .select("id, created_at, title, source_url, url")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+    return NextResponse.json({ ok: true, data });
+  } catch (err: any) {
+    console.error("[/api/brief/list] error:", err?.message || err);
+    return NextResponse.json({ ok: false, error: err?.message || "unknown" }, { status: 500 });
+  }
 }
