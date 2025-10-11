@@ -1,44 +1,31 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-const TABLE = "briefs";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function extractCanonical(html: string): string | null {
+export async function POST(req: NextRequest) {
   try {
-    const m =
-      html.match(/<link[^>]+rel=["']?canonical["']?[^>]*href=["']([^"']+)["']/i) ||
-      html.match(/<meta[^>]+property=["']og:url["'][^>]*content=["']([^"']+)["']/i);
-    return m?.[1] ?? null;
-  } catch {
-    return null;
-  }
-}
+    const { title, html_raw, source_url, url } = await req.json();
 
-export async function POST(req: Request) {
-  try {
-    const { title, html, source_url } = await req.json();
-
-    if (!title || !html) {
-      return NextResponse.json({ error: "title and html are required" }, { status: 400 });
+    if (!title || !html_raw) {
+      return NextResponse.json(
+        { error: "Missing required fields: title, html_raw" },
+        { status: 400 }
+      );
     }
 
-    const canonical = extractCanonical(html);
-    // Store both; url is optional now
-    const payload = {
-      title,
-      html,
-      source_url: source_url || canonical || null,
-      url: canonical || source_url || null,
-    };
+    const supabase = getSupabaseServer();
+    const { data, error } = await supabase
+      .from("briefs")
+      .insert([{ title, html_raw, source_url: source_url ?? null, url: url ?? null }])
+      .select("id")
+      .single();
 
-    const { data, error } = await supabase.from(TABLE).insert(payload).select("id").single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-    return NextResponse.json({ ok: true, id: data.id });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ id: data?.id }, { status: 200 });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
   }
