@@ -1,55 +1,57 @@
-import { createClient } from "@/lib/supabase/server"
-import { Nav } from "@/components/nav"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { notFound, redirect } from "next/navigation"
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
-export default async function ExportPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+type BriefRow = {
+  id: string;
+  title: string | null;
+  markdown?: string | null;
+  content_markdown?: string | null;
+  html_raw?: string | null;
+  created_at?: string | null;
+};
 
-  if (!user) {
-    redirect("/auth/login")
-  }
+export default async function ExportPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const supabase = getSupabaseServer();
 
-  const { data: project } = await supabase.from("projects").select("*").eq("id", id).single()
+  const { data, error } = await supabase
+    .from("briefs")
+    .select("id,title,markdown,content_markdown,html_raw,created_at")
+    .eq("id", params.id)
+    .single<BriefRow>();
 
-  if (!project) {
-    notFound()
-  }
+  if (error || !data) return notFound();
 
-  // Fetch pages and links for export
-  const { data: pages } = await supabase.from("pages").select("*").eq("project_id", id)
+  const md =
+    data.markdown ??
+    data.content_markdown ??
+    "_No markdown stored for this brief yet._";
 
   return (
-    <div className="flex min-h-svh flex-col">
-      <Nav />
-      <main className="flex-1 px-4 py-8">
-        <div className="container mx-auto max-w-4xl">
-          <Card>
-            <CardHeader>
-              <CardTitle>Export: {project.name}</CardTitle>
-              <CardDescription>Export your project data</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-semibold">Project Summary</h3>
-                  <p className="text-sm text-muted-foreground">{pages?.length || 0} page(s) in this project</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline">Export as JSON</Button>
-                  <Button variant="outline">Export as CSV</Button>
-                  <Button variant="outline">Export as PDF</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">
+          Export: {data.title ?? "(untitled)"}
+        </h1>
+        <Link
+          href={`/brief/${data.id}`}
+          className="text-sm px-3 py-1 rounded border border-zinc-700 hover:bg-zinc-800"
+        >
+          Back to brief
+        </Link>
+      </div>
+
+      <p className="text-zinc-400 text-sm">Copy the markdown below.</p>
+
+      <textarea
+        className="w-full h-[60vh] rounded border border-zinc-700 bg-zinc-900 p-3 font-mono text-sm"
+        readOnly
+        value={md}
+      />
     </div>
-  )
+  );
 }
