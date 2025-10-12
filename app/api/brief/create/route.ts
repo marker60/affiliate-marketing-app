@@ -1,32 +1,52 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
-
+// app/api/brief/create/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-export async function POST(req: NextRequest) {
+import { NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
+
+/**
+ * NOTE: To avoid schema-mismatch crashes, we only insert guaranteed
+ * columns: title, source_url, url. (No md/html_raw here.)
+ * You can extend later once the DB columns are confirmed.
+ */
+export async function POST(req: Request) {
   try {
-    const { title, html_raw, source_url, url } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const title: string | undefined = body?.title;
+    const source_url: string | null = body?.source_url ?? body?.url ?? null;
+    const url: string | null = body?.url ?? null;
 
-    if (!title || !html_raw) {
-      return NextResponse.json(
-        { error: "Missing required fields: title, html_raw" },
-        { status: 400 }
-      );
+    if (!title) {
+      return NextResponse.json({ error: "Missing 'title'." }, { status: 400 });
     }
 
     const supabase = getSupabaseServer();
+
     const { data, error } = await supabase
       .from("briefs")
-      .insert([{ title, html_raw, source_url: source_url ?? null, url: url ?? null }])
+      .insert({ title, source_url, url })
       .select("id")
       .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ id: data?.id }, { status: 200 });
+
+    return NextResponse.json({ ok: true, id: data.id });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message ?? "Unexpected error" },
+      { status: 500 }
+    );
   }
+}
+
+// Helpful GET for quick health checks
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    hint: "POST JSON: { title, source_url?, url? }"
+  });
 }
