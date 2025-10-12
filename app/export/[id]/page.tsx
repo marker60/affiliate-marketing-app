@@ -1,57 +1,31 @@
+// app/export/[id]/page.tsx
+// Make this page dynamic so Next won't try to prerender it during build
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getSupabaseServer } from "@/lib/supabase/server";
 
-type BriefRow = {
-  id: string;
-  title: string | null;
-  markdown?: string | null;
-  content_markdown?: string | null;
-  html_raw?: string | null;
-  created_at?: string | null;
-};
-
-export default async function ExportPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const supabase = getSupabaseServer();
-
-  const { data, error } = await supabase
-    .from("briefs")
-    .select("id,title,markdown,content_markdown,html_raw,created_at")
-    .eq("id", params.id)
-    .single<BriefRow>();
-
-  if (error || !data) return notFound();
-
-  const md =
-    data.markdown ??
-    data.content_markdown ??
-    "_No markdown stored for this brief yet._";
+export default function ExportPage({ params }: { params: { id: string } }) {
+  const id = params.id;
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          Export: {data.title ?? "(untitled)"}
-        </h1>
-        <Link
-          href={`/brief/${data.id}`}
-          className="text-sm px-3 py-1 rounded border border-zinc-700 hover:bg-zinc-800"
-        >
-          Back to brief
+        <h1 className="text-2xl font-bold">Export</h1>
+        <Link href="/" className="px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700">
+          Home
         </Link>
       </div>
 
-      <p className="text-zinc-400 text-sm">Copy the markdown below.</p>
-
-      <textarea
-        className="w-full h-[60vh] rounded border border-zinc-700 bg-zinc-900 p-3 font-mono text-sm"
-        readOnly
-        value={md}
-      />
+      <div className="rounded border border-zinc-800 p-4 space-y-3">
+        <div className="text-sm text-zinc-400">Export ID: {id}</div>
+        <p className="text-zinc-200">
+          This is a placeholder page. No data is fetched at build time, so deployments won’t fail.
+        </p>
+        <p className="text-zinc-400 text-sm">
+          If you have an API that prepares downloads (e.g. <code>/api/export/{'{id}'}</code>), you can link to it here.
+        </p>
+      </div>
     </div>
   );
 }
