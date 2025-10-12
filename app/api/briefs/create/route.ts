@@ -1,63 +1,42 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.SUPABASE_SERVICE_ROLE_KEY as string // needs insert perms or a policy that allows it
-)
-
-function tryExtractUrlFromHtml(html: string): string | null {
-  const m1 = html.match(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["']/i)
-  if (m1?.[1]) return m1[1]
-  const m2 = html.match(/<meta[^>]+property=["']og:url["'][^>]*content=["']([^"']+)["']/i)
-  if (m2?.[1]) return m2[1]
-  const m3 = html.match(/<base[^>]*href=["']([^"']+)["']/i)
-  if (m3?.[1]) return m3[1]
-  return null
-}
-
-function validateUrl(u: string): string {
-  const url = new URL(u)
-  return url.toString()
-}
-
+/**
+ * Create a brief from either markdown (`md`) or raw HTML (`html`).
+ * Body: { title?: string, md?: string, html?: string, source_url?: string, url?: string }
+ */
 export async function POST(req: Request) {
   try {
-    const { title, html_raw, source_url } = (await req.json()) as {
-      title?: string
-      html_raw?: string
-      source_url?: string
-    }
+    const supabase = getSupabaseServer();
+    const body = await req.json().catch(() => ({}));
 
-    if (!title || !html_raw) {
-      return NextResponse.json({ error: 'Missing title or html_raw' }, { status: 400 })
-    }
+    const title: string = (body?.title ?? "").toString().trim() || "Untitled";
+    const md: string | undefined = typeof body?.md === "string" ? body.md : undefined;
+    const html: string | undefined = typeof body?.html === "string" ? body.html : undefined;
+    const source_url: string | null =
+      (typeof body?.source_url === "string" && body.source_url.trim()) ||
+      (typeof body?.url === "string" && body.url.trim()) ||
+      null;
 
-    let finalUrl: string | null = null
-    if (source_url) {
-      try { finalUrl = validateUrl(source_url) } catch {}
-    }
-    if (!finalUrl) {
-      const extracted = tryExtractUrlFromHtml(html_raw)
-      if (extracted) {
-        try { finalUrl = validateUrl(extracted) } catch {}
-      }
-    }
+    // Prefer markdown if provided; otherwise store the HTML as-is in md (you can parse later).
+    const content = md ?? html ?? "";
 
     const { data, error } = await supabase
-      .from('briefs')
+      .from("briefs")
       .insert({
         title,
-        html_raw,
-        source_url: finalUrl,
-        origin: 'manual'
+        md: content,
+        source_url,
       })
-      .select()
-      .single()
+      .select("id")
+      .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ brief: data }, { status: 201 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ data }, { status: 200 });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 400 });
   }
 }
