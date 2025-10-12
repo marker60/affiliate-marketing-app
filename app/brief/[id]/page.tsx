@@ -2,10 +2,12 @@
 import Link from "next/link";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 type BriefRow = {
   id: string;
   created_at: string | null;
-  title: string;
+  title: string | null;
   source_url: string | null;
   url: string | null;
   md: string | null;
@@ -19,7 +21,7 @@ export default async function BriefDetailPage({
 }) {
   const supabase = getSupabaseServer();
 
-  // Note: remove generic <BriefRow> to avoid the “Expected 2 type arguments” error
+  // Fetch the brief safely
   const { data, error } = await supabase
     .from("briefs")
     .select("id, created_at, title, source_url, url, md, html_raw")
@@ -27,64 +29,86 @@ export default async function BriefDetailPage({
     .single();
 
   if (error) {
+    // Render a readable error (error boundary not required)
     return (
-      <div className="p-6">
-        <Link href="/brief" className="underline text-sm">
-          ← Back
+      <div className="p-6 space-y-3">
+        <h1 className="text-2xl font-bold">Brief</h1>
+        <p className="text-red-400">
+          Couldn’t load this brief: {error.message}
+        </p>
+        <Link
+          href="/brief"
+          className="inline-block px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600"
+        >
+          Back to Briefs
         </Link>
-        <div className="mt-4 text-red-400">Error: {error.message}</div>
       </div>
     );
   }
 
-  if (!data) {
+  const row = (data ?? null) as BriefRow | null;
+  if (!row) {
     return (
-      <div className="p-6">
-        <Link href="/brief" className="underline text-sm">
-          ← Back
+      <div className="p-6 space-y-3">
+        <h1 className="text-2xl font-bold">Brief</h1>
+        <p className="text-zinc-400">This brief does not exist.</p>
+        <Link
+          href="/brief"
+          className="inline-block px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600"
+        >
+          Back to Briefs
         </Link>
-        <div className="mt-4 text-zinc-400">Not found.</div>
       </div>
     );
   }
 
-  const source = data.source_url || data.url;
+  const title = row.title || "(untitled)";
+  const source = row.source_url || row.url;
 
   return (
     <div className="p-6 space-y-4">
-      <Link href="/brief" className="text-sm underline">
-        ← Back
-      </Link>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs text-zinc-400">
+            {row.created_at
+              ? new Date(row.created_at).toLocaleString()
+              : "—"}{" "}
+            · {row.id}
+          </div>
+          <h1 className="mt-1 text-2xl font-bold">{title}</h1>
+        </div>
 
-      <h1 className="text-2xl font-bold">{data.title}</h1>
-
-      <div className="text-xs text-zinc-400">
-        {new Date(data.created_at ?? Date.now()).toLocaleString()} ·{" "}
-        {data.id.slice(0, 8)}…
+        <div className="flex items-center gap-2">
+          <Link
+            href="/brief"
+            className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600"
+          >
+            Back
+          </Link>
+          {source ? (
+            <a
+              href={source}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-500"
+            >
+              Open original
+            </a>
+          ) : null}
+        </div>
       </div>
 
-      {source ? (
-        <a
-          href={source}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 underline"
-        >
-          Open original
-        </a>
+      {/* Prefer markdown if present; otherwise show HTML length */}
+      {row.md ? (
+        <div className="rounded border border-zinc-800 p-4 whitespace-pre-wrap">
+          {row.md}
+        </div>
+      ) : row.html_raw ? (
+        <div className="rounded border border-zinc-800 p-4 text-sm text-zinc-400">
+          Stored HTML length: {row.html_raw.length.toLocaleString()} bytes
+        </div>
       ) : (
-        <span className="text-zinc-500">No source URL</span>
-      )}
-
-      {data.md ? (
-        <pre className="whitespace-pre-wrap">{data.md}</pre>
-      ) : data.html_raw ? (
-        <div
-          className="prose prose-invert max-w-none"
-          dangerouslySetInnerHTML={{ __html: data.html_raw }}
-        />
-      ) : (
-        <div className="text-zinc-500">No content</div>
+        <div className="text-zinc-400">No content stored for this brief.</div>
       )}
     </div>
   );
