@@ -1,47 +1,73 @@
-import { createClient } from "@supabase/supabase-js";
+import React from "react";
+import { notFound } from "next/navigation";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import Link from "next/link";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // server-side
-);
-const TABLE = "briefs";
-
-export default async function BriefDetail({ params }: { params: { id: string } }) {
+export default async function BriefDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const supabase = getSupabaseServer();
   const { data, error } = await supabase
-    .from(TABLE)
-    .select("id, title, html, source_url, url, created_at")
+    .from("briefs")
+    .select("id, created_at, title, md, source_url, url")
     .eq("id", params.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) return <div className="p-6">Not found.</div>;
+  if (error) {
+    // On query errors, surface 404 to avoid crashing build/SSR
+    notFound();
+  }
+  if (!data) {
+    notFound();
+  }
 
-  const source = data.source_url || data.url;
+  const created =
+    data.created_at ? new Date(data.created_at).toLocaleString() : "";
+  const source = data.source_url || data.url || null;
+  const content = data.md || "";
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{data.title}</h1>
-        <Link href="/brief" className="text-blue-400 hover:underline">← Back</Link>
+        <div>
+          <div className="text-xs text-zinc-400">{created}</div>
+          <h1 className="text-2xl font-bold">{data.title || "Untitled"}</h1>
+        </div>
+
+        <div className="flex gap-2">
+          <Link
+            href="/brief"
+            className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600"
+          >
+            Back
+          </Link>
+          {source ? (
+            <a
+              href={source}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-500"
+            >
+              Open original
+            </a>
+          ) : (
+            <span className="px-3 py-2 rounded bg-zinc-800 text-zinc-400">
+              No source URL
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="text-sm text-zinc-400">
-        {new Date(data.created_at ?? Date.now()).toLocaleString()} · {data.id.slice(0, 8)}…
-      </div>
-
-      <div className="flex gap-3">
-        {source ? (
-          <a href={source} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-            Open original
-          </a>
+      <div className="rounded border border-zinc-800 p-4 prose prose-invert max-w-none">
+        {content.trim() ? (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         ) : (
-          <span className="text-zinc-500">No source URL</span>
+          <div className="text-zinc-400">No content yet.</div>
         )}
-      </div>
-
-      {/* Render raw HTML in a sandboxed iframe-like div */}
-      <div className="rounded border border-zinc-800 p-4 overflow-x-auto bg-zinc-950">
-        <pre className="text-xs whitespace-pre-wrap">{data.html}</pre>
       </div>
     </div>
   );
