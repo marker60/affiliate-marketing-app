@@ -1,6 +1,6 @@
 // app/draft/[id]/page.tsx
-export const runtime = "nodejs";         // ensure Node runtime on Vercel
-export const dynamic = "force-dynamic";  // avoid static optimization
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,34 +23,36 @@ export default async function DraftPage({
 }) {
   const supabase = getSupabaseServer();
 
+  // No generics on .from() — avoid the TS error "Expected 2 type arguments"
   const { data, error } = await supabase
-    .from<DraftRow>("drafts")
+    .from("drafts")
     .select("id, created_at, title, md, html_raw, source_url, url")
     .eq("id", params.id)
     .single();
 
   if (error || !data) {
-    // If the draft doesn't exist, show 404
     notFound();
   }
 
-  const created = data.created_at
-    ? new Date(data.created_at).toLocaleString()
+  // Narrow to our shape
+  const row = data as DraftRow;
+
+  const created = row.created_at
+    ? new Date(row.created_at).toLocaleString()
     : "n/a";
 
-  // Prefer HTML if present; otherwise show plain MD in a <pre>
-  const hasHtml = Boolean(data.html_raw && data.html_raw.trim().length > 0);
-  const hasMd = Boolean(data.md && data.md.trim().length > 0);
+  const hasHtml = !!row.html_raw && row.html_raw.trim().length > 0;
+  const hasMd = !!row.md && row.md.trim().length > 0;
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xs text-zinc-400">
-            {created} · {data.id.slice(0, 8)}…
+            {created} · {row.id.slice(0, 8)}…
           </div>
           <h1 className="text-2xl font-bold">
-            {data.title || "(untitled draft)"}
+            {row.title || "(untitled draft)"}
           </h1>
         </div>
         <Link
@@ -62,18 +64,18 @@ export default async function DraftPage({
       </div>
 
       <div className="flex items-center gap-3 text-sm">
-        {data.source_url ? (
+        {row.source_url ? (
           <a
-            href={data.source_url}
+            href={row.source_url}
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-400 hover:underline"
           >
             Open original
           </a>
-        ) : data.url ? (
+        ) : row.url ? (
           <a
-            href={data.url}
+            href={row.url}
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-400 hover:underline"
@@ -89,11 +91,11 @@ export default async function DraftPage({
         {hasHtml ? (
           <article
             className="prose prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: data.html_raw! }}
+            dangerouslySetInnerHTML={{ __html: row.html_raw! }}
           />
         ) : hasMd ? (
           <pre className="whitespace-pre-wrap text-sm text-zinc-200">
-            {data.md}
+            {row.md}
           </pre>
         ) : (
           <div className="text-zinc-500">This draft has no content yet.</div>
