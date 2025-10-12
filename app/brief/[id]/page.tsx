@@ -1,74 +1,84 @@
-import React from "react";
 import { notFound } from "next/navigation";
-import { getSupabaseServer } from "@/lib/supabase/server";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import Link from "next/link";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
-export default async function BriefDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export const runtime = "nodejs";          // ensure Node runtime on Vercel
+export const dynamic = "force-dynamic";   // don't prerender
+export const revalidate = 0;              // always fetch fresh
+
+type BriefRow = {
+  id: string;
+  created_at: string | null;
+  title: string;
+  source_url: string | null;
+  url: string | null;
+  md: string | null;
+  html_raw: string | null;
+};
+
+export default async function BriefPage({ params }: { params: { id: string } }) {
   const supabase = getSupabaseServer();
+
+  // Load the brief directly from Supabase
   const { data, error } = await supabase
-    .from("briefs")
-    .select("id, created_at, title, md, source_url, url")
+    .from<BriefRow>("briefs")
+    .select("id, created_at, title, source_url, url, md, html_raw")
     .eq("id", params.id)
-    .maybeSingle();
+    .single();
 
   if (error) {
-    // On query errors, surface 404 to avoid crashing build/SSR
-    notFound();
+    // Log so you can see it in Vercel logs; render a generic error to users
+    console.error("brief/[id] load error:", error);
+    throw new Error("Failed to load brief");
   }
   if (!data) {
     notFound();
   }
 
-  const created =
-    data.created_at ? new Date(data.created_at).toLocaleString() : "";
   const source = data.source_url || data.url || null;
-  const content = data.md || "";
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs text-zinc-400">{created}</div>
-          <h1 className="text-2xl font-bold">{data.title || "Untitled"}</h1>
-        </div>
-
-        <div className="flex gap-2">
-          <Link
-            href="/brief"
-            className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600"
-          >
-            Back
-          </Link>
-          {source ? (
-            <a
-              href={source}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-500"
-            >
-              Open original
-            </a>
-          ) : (
-            <span className="px-3 py-2 rounded bg-zinc-800 text-zinc-400">
-              No source URL
-            </span>
-          )}
-        </div>
+      <div className="text-sm text-zinc-400">
+        {new Date(data.created_at ?? Date.now()).toLocaleString()} · {data.id}
       </div>
 
-      <div className="rounded border border-zinc-800 p-4 prose prose-invert max-w-none">
-        {content.trim() ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <h1 className="text-2xl font-bold">{data.title}</h1>
+
+      <div className="flex gap-3">
+        <Link href="/brief" className="text-blue-400 hover:underline">
+          ← Back to briefs
+        </Link>
+        {source ? (
+          <a
+            href={source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:underline"
+          >
+            Open original
+          </a>
         ) : (
-          <div className="text-zinc-400">No content yet.</div>
+          <span className="text-zinc-500">No source URL</span>
         )}
       </div>
+
+      {/* Prefer markdown if present; otherwise show raw HTML as a code block preview */}
+      {data.md ? (
+        <section className="prose prose-invert max-w-none">
+          {/* If you later want pretty markdown rendering, pipe through a renderer here */}
+          <pre className="whitespace-pre-wrap">{data.md}</pre>
+        </section>
+      ) : data.html_raw ? (
+        <section>
+          <h2 className="text-lg font-semibold mb-2">HTML (raw)</h2>
+          <pre className="bg-zinc-900/50 p-3 rounded overflow-auto text-xs">
+            {data.html_raw}
+          </pre>
+        </section>
+      ) : (
+        <p className="text-zinc-500">No content stored for this brief yet.</p>
+      )}
     </div>
   );
 }
