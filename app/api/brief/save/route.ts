@@ -1,47 +1,40 @@
-import { NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
-import scrape from "@/lib/scrape"
+// app/api/brief/save/route.ts
+import { NextResponse } from "next/server";
+import { getSupabaseService } from "@/lib/supabase/server";
 
-export const runtime = "nodejs"
-export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic";
 
-// POST: insert provided data
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const { url, title, description, bullets, text } = body || {}
-    if (!url) return NextResponse.json({ error: "Missing url" }, { status: 400 })
+    const body = await req.json().catch(() => ({}));
+    const { title, html, source_url, url } = body ?? {};
 
-    const { data, error } = await supabase
+    if (!title || !html) {
+      return NextResponse.json({ error: "Missing title or html" }, { status: 400 });
+    }
+
+    const db = getSupabaseService();
+
+    const { data, error } = await db
       .from("briefs")
-      .insert([{ url, title, description, bullets, text }])
+      .insert({
+        title,
+        html,
+        md: body.md ?? null,        // optional markdown if you have it
+        source_url: source_url ?? null,
+        url: url ?? null,
+      })
       .select("id")
-      .single()
+      .single();
 
-    if (error) throw error
-    return NextResponse.json({ ok: true, id: data.id }, { status: 201 })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 })
-  }
-}
+    if (error) {
+      console.error("brief/save insert error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-// GET: scrape then insert (?url=)
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const url = searchParams.get("url")
-    if (!url) return NextResponse.json({ error: "Missing ?url=" }, { status: 400 })
-
-    const s = await scrape(url)
-    const { data, error } = await supabase
-      .from("briefs")
-      .insert([s])
-      .select("id")
-      .single()
-
-    if (error) throw error
-    return NextResponse.json({ ok: true, id: data.id }, { status: 201 })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 })
+    return NextResponse.json({ ok: true, id: data.id });
+  } catch (err: any) {
+    console.error("brief/save fatal:", err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
