@@ -1,47 +1,65 @@
 // app/api/brief/save/route.ts
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const BodySchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().min(1).optional(),
+  md: z.string().optional(),
+  html_raw: z.string().optional(),
+  source_url: z.string().url().nullable().optional(),
+  url: z.string().url().nullable().optional(),
+});
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { id, title, md, html_raw, source_url, url } = body ?? {};
+    const json = await req.json();
+    const body = BodySchema.parse(json);
 
-    if (!id || typeof id !== "string") {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    // Build partial update only with provided fields
+    const update: Record<string, unknown> = {};
+    if (typeof body.title !== "undefined") update.title = body.title;
+    if (typeof body.md !== "undefined") update.md = body.md;
+    if (typeof body.html_raw !== "undefined") update.html_raw = body.html_raw;
+    if (typeof body.source_url !== "undefined") update.source_url = body.source_url;
+    if (typeof body.url !== "undefined") update.url = body.url;
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json(
+        { error: "Nothing to update" },
+        { status: 400 }
+      );
     }
 
     const supabase = getSupabaseServer();
 
-    const updates: Record<string, string | null> = {};
-    if (typeof title === "string") updates.title = title;
-    if (typeof md === "string") updates.md = md;
-    if (typeof html_raw === "string") updates.html_raw = html_raw;
-    if (typeof source_url === "string") updates.source_url = source_url;
-    if (typeof url === "string") updates.url = url;
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
-    }
-
+    // Do the update; do not force .single() to avoid the “Cannot coerce…” error
     const { data, error } = await supabase
       .from("briefs")
-      .update(updates)
-      .eq("id", id)
+      .update(update)
+      .eq("id", body.id)
       .select("id")
-      .maybeSingle(); // avoids “Cannot coerce … to a single JSON object”
+      .maybeSingle();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+
+    // If RLS prevented the update or the row didn’t exist, data may be null
     if (!data) {
-      return NextResponse.json({ error: "Not found or no changes" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, id: body.id, note: "No row updated (check RLS / id)" },
+        { status: 200 }
+      );
     }
 
-    return NextResponse.json({ ok: true, id });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
+    return NextResponse.json({ ok: true, id: data.id });
+  } catch (err: any) {
+    const msg = err?.message ?? "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 }

@@ -1,32 +1,37 @@
 // app/api/brief/create/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { z } from "zod";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const BodySchema = z.object({
+  title: z.string().min(1),
+  source_url: z.string().url().nullable().optional(),
+  url: z.string().url().nullable().optional(),
+  md: z.string().optional(),
+  html_raw: z.string().optional(),
+});
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { title, source_url, url, md, html_raw } = body ?? {};
+    const json = await req.json();
+    const body = BodySchema.parse(json);
 
-    if (!title || typeof title !== "string") {
-      return NextResponse.json({ error: "title is required" }, { status: 400 });
-    }
+    const row = {
+      title: body.title,
+      source_url: typeof body.source_url === "undefined" ? null : body.source_url,
+      url: typeof body.url === "undefined" ? null : body.url,
+      md: body.md ?? null,
+      html_raw: body.html_raw ?? null,
+    };
 
-    const supabase = getSupabaseAdmin();
+    const supabase = getSupabaseServer();
 
     const { data, error } = await supabase
       .from("briefs")
-      .insert([
-        {
-          title,
-          source_url: source_url ?? null,
-          url: url ?? null,
-          md: md ?? null,
-          html_raw: html_raw ?? null,
-        },
-      ])
+      .insert(row)
       .select("id")
       .single();
 
@@ -35,10 +40,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, id: data.id });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+  } catch (err: any) {
+    const msg = err?.message ?? "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
