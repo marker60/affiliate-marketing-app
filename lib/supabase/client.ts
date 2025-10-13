@@ -1,16 +1,14 @@
-import { createBrowserClient } from "@supabase/ssr"
+// [LABEL: FILE] lib/supabase/client.ts
+import { createClient } from "@supabase/supabase-js";
 
-export function createClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+/**
+ * Browser-safe Supabase client with anon key.
+ * Use this in client components/pages.
+ */
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith("http")) {
-    console.error("[v0] Missing or invalid Supabase environment variables")
-    console.error("[v0] Please configure Supabase integration in Project Settings")
-    throw new Error(
-      "Supabase is not configured. Please add the Supabase integration in Project Settings (gear icon in top right).",
-    )
-  }
+if (!url) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_URL");
+if (!anon) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-  return createBrowserClient(supabaseUrl, supabaseAnonKey)
-}
+export const supabase = createClient(url, anon);
