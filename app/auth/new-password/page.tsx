@@ -12,8 +12,6 @@ export default function NewPasswordPage() {
   const [message, setMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    // After clicking the reset link, Supabase sets a session in this tab.
-    // We just verify we can proceed.
     (async () => {
       const { data } = await supabase.auth.getSession();
       setReady(!!data.session);
@@ -27,6 +25,16 @@ export default function NewPasswordPage() {
 
     if (password.length < 12) {
       setError("Please use at least 12 characters.");
+      return;
+    }
+
+    const pwned = await checkPwned(password);
+    if (!pwned.ok) {
+      setError("Security check temporarily unavailable. Please try again.");
+      return;
+    }
+    if (pwned.compromised) {
+      setError("This password appears in a known data breach. Please choose a different, stronger password.");
       return;
     }
 
@@ -86,10 +94,25 @@ export default function NewPasswordPage() {
 function normalizeAuthError(raw: string) {
   const lower = raw.toLowerCase();
   if (lower.includes("breach") || lower.includes("pwned") || lower.includes("compromised")) {
-    return "This password appears in a known breach. Please choose a different, stronger password.";
+    return "This password appears in a known data breach. Please choose a different, stronger password.";
   }
   if (lower.includes("weak") || lower.includes("policy")) {
     return "Your password doesn’t meet our security policy. Use at least 12 characters and avoid common words.";
   }
   return raw;
+}
+
+async function checkPwned(password: string): Promise<{ ok: boolean; compromised?: boolean; count?: number }> {
+  try {
+    const res = await fetch("/api/security/pwned", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) return { ok: false };
+    const json = await res.json();
+    return { ok: !!json.ok, compromised: json.compromised, count: json.count };
+  } catch {
+    return { ok: false };
+  }
 }

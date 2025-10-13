@@ -1,4 +1,4 @@
-// [LABEL: FILE] app/auth/signup/page.tsx
+// [LABEL: FILE] app/auth/sign-up/page.tsx
 "use client";
 
 import * as React from "react";
@@ -17,9 +17,21 @@ export default function SignUpPage() {
     setError(null);
     setMessage(null);
 
-    // Client-side baseline (complements Supabase dashboard checks)
     if (password.length < 12) {
       setError("Please use at least 12 characters.");
+      return;
+    }
+
+    // FREE safeguard: HIBP pwned check (server-side API)
+    const pwned = await checkPwned(password);
+    if (!pwned.ok) {
+      setError("Security check temporarily unavailable. Please try again.");
+      return;
+    }
+    if (pwned.compromised) {
+      setError(
+        "This password appears in a known data breach. Please choose a different, stronger password."
+      );
       return;
     }
 
@@ -92,12 +104,26 @@ export default function SignUpPage() {
 
 function normalizeAuthError(raw: string) {
   const lower = raw.toLowerCase();
-  // Friendly message when Supabase "Leaked password protection" blocks a password
   if (lower.includes("breach") || lower.includes("pwned") || lower.includes("compromised")) {
-    return "This password has appeared in a known data breach. Please choose a different, stronger password.";
+    return "This password appears in a known data breach. Please choose a different, stronger password.";
   }
   if (lower.includes("weak") || lower.includes("policy")) {
-    return "Your password doesn’t meet our security policy. Please use at least 12 characters and avoid common words.";
+    return "Your password doesn’t meet our security policy. Use at least 12 characters and avoid common words.";
   }
   return raw;
+}
+
+async function checkPwned(password: string): Promise<{ ok: boolean; compromised?: boolean; count?: number }> {
+  try {
+    const res = await fetch("/api/security/pwned", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) return { ok: false };
+    const json = await res.json();
+    return { ok: !!json.ok, compromised: json.compromised, count: json.count };
+  } catch {
+    return { ok: false };
+  }
 }
