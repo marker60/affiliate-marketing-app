@@ -1,228 +1,169 @@
+// [LABEL: FILE] app/brief/[id]/BriefForm.tsx
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/components/ui/use-toast";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Loader2, Save, Eye, Link as LinkIcon } from "lucide-react";
 
-type Props = {
-  /** Optional: seed URL for From URL tab */
-  seedUrl?: string;
+type Brief = {
+  id: string;
+  title: string;
+  source_url?: string | null;
+  html?: string | null;
+  summary?: string | null;
+  notes?: string | null;
+  status?: "new" | "draft" | "ready" | "archived";
+  tags?: string[] | null;
 };
 
-export default function BriefForm({ seedUrl = "" }: Props) {
-  const router = useRouter();
-  const { toast } = useToast();
-
-  // Tabs
-  const [tab, setTab] = React.useState<"url" | "html">("url");
-
-  // From URL
-  const [url, setUrl] = React.useState(seedUrl);
-  const [fetching, setFetching] = React.useState(false);
-
-  // From HTML
-  const [rawHtml, setRawHtml] = React.useState("");
-  const [previewMd, setPreviewMd] = React.useState("");
-  const [generating, setGenerating] = React.useState(false);
+export default function BriefForm({ id }: { id: string }) {
+  const [brief, setBrief] = React.useState<Brief | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [message, setMessage] = React.useState<string | null>(null);
 
-  // --- Helpers ---
-  const fetchFromUrl = async () => {
-    if (!url.trim()) {
-      toast({ title: "Missing URL", description: "Enter a URL first." });
-      return;
-    }
-    setFetching(true);
-    try {
-      const res = await fetch("/api/brief", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      // Expect backend to create & return the new brief id
-      if (data?.id) {
-        toast({ title: "Created", description: "Brief saved from URL." });
-        router.push(`/brief/${data.id}`);
-      } else {
-        toast({
-          title: "Fetched",
-          description: "Content generated but not saved by API.",
-        });
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/brief/${id}`, { cache: "no-store" });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error ?? "Failed to load brief");
+        if (!cancelled) setBrief(json.item as Brief);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? "Failed to load");
       }
-    } catch (e: any) {
-      toast({
-        title: "Fetch failed",
-        description: e?.message ?? "Unknown error",
-        variant: "destructive",
-      });
-    } finally {
-      setFetching(false);
-    }
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
-  const generateFromHtml = async () => {
-    if (!rawHtml.trim()) {
-      toast({ title: "Missing HTML", description: "Paste page source first." });
-      return;
-    }
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/brief", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // No network scrape — server parses HTML and returns markdown preview
-        body: JSON.stringify({ html: rawHtml, preview: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      setPreviewMd(data?.markdown ?? "");
-      if (!data?.markdown) {
-        toast({
-          title: "No preview returned",
-          description: "API did not send markdown; you can still try Save.",
-        });
-      }
-    } catch (e: any) {
-      toast({
-        title: "Generation failed",
-        description: e?.message ?? "Unknown error",
-        variant: "destructive",
-      });
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const saveFromHtml = async () => {
-    if (!rawHtml.trim()) {
-      toast({ title: "Nothing to save", description: "Paste HTML first." });
-      return;
-    }
+  async function save(patch: Partial<Brief>) {
     setSaving(true);
+    setError(null);
+    setMessage(null);
     try {
-      const res = await fetch("/api/brief", {
+      const res = await fetch(`/api/brief/save`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Tell API to persist; title is optional and can be derived server-side
-        body: JSON.stringify({ html: rawHtml, save: true }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      if (!data?.id) throw new Error("API did not return a brief id.");
-      toast({ title: "Saved", description: "Brief created from HTML." });
-      router.push(`/brief/${data.id}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "Save failed");
+      setMessage("Saved!");
+      setBrief((b) => (b ? { ...b, ...patch } as Brief : b));
+      setTimeout(() => setMessage(null), 1500);
     } catch (e: any) {
-      toast({
-        title: "Save failed",
-        description:
-          e?.message ??
-          "The API may not support saving HTML yet. I can wire that next.",
-        variant: "destructive",
-      });
+      setError(e?.message ?? "Save failed");
     } finally {
       setSaving(false);
     }
-  };
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border p-4">
+        <h1 className="text-2xl font-bold">Draft</h1>
+        <p className="text-red-600">Couldn’t load this draft: {error}</p>
+      </div>
+    );
+  }
+
+  if (!brief) return <div>Loading…</div>;
 
   return (
-    <div className="container mx-auto max-w-5xl py-6 space-y-6">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Create a Brief</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-            <TabsList>
-              <TabsTrigger value="url">From URL</TabsTrigger>
-              <TabsTrigger value="html">From HTML</TabsTrigger>
-            </TabsList>
+    <div className="space-y-4">
+      <label className="block">
+        <span className="text-sm font-medium">Title</span>
+        <input
+          className="mt-1 w-full rounded-lg border p-2"
+          value={brief.title ?? ""}
+          onChange={(e) => setBrief({ ...brief, title: e.target.value })}
+          onBlur={() => save({ title: brief.title })}
+        />
+      </label>
 
-            {/* --- FROM URL --- */}
-            <TabsContent value="url" className="space-y-3 pt-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="https://example.com/article"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  autoComplete="off"
-                />
-                <Button onClick={fetchFromUrl} disabled={fetching}>
-                  {fetching ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Fetching
-                    </>
-                  ) : (
-                    <>
-                      <LinkIcon className="mr-2 h-4 w-4" /> Fetch & Save
-                    </>
-                  )}
-                </Button>
-              </div>
-              <p className="text-xs opacity-70">
-                If a site blocks scraping (403), use the **From HTML** tab.
-              </p>
-            </TabsContent>
+      <label className="block">
+        <span className="text-sm font-medium">Source URL</span>
+        <input
+          className="mt-1 w-full rounded-lg border p-2"
+          value={brief.source_url ?? ""}
+          onChange={(e) => setBrief({ ...brief, source_url: e.target.value })}
+          onBlur={() => save({ source_url: brief.source_url })}
+        />
+      </label>
 
-            {/* --- FROM HTML --- */}
-            <TabsContent value="html" className="space-y-4 pt-4">
-              <Textarea
-                value={rawHtml}
-                onChange={(e) => setRawHtml(e.target.value)}
-                placeholder="Paste full page HTML (document.documentElement.outerHTML)…"
-                className="min-h-[220px] font-mono text-xs"
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={generateFromHtml} disabled={generating}>
-                  {generating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preview
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="mr-2 h-4 w-4" /> Preview Markdown
-                    </>
-                  )}
-                </Button>
-                {/* NEW: SAVE BUTTON */}
-                <Button onClick={saveFromHtml} disabled={saving}>
-                  {saving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" /> Save Brief
-                    </>
-                  )}
-                </Button>
-              </div>
+      <label className="block">
+        <span className="text-sm font-medium">HTML (optional)</span>
+        <textarea
+          className="mt-1 w-full rounded-lg border p-2 h-48"
+          value={brief.html ?? ""}
+          onChange={(e) => setBrief({ ...brief, html: e.target.value })}
+          onBlur={() => save({ html: brief.html })}
+          placeholder="Paste article HTML here…"
+        />
+      </label>
 
-              {previewMd ? (
-                <div className="rounded-md border p-4">
-                  <div className="mb-2 text-xs font-medium opacity-70">
-                    Markdown Preview
-                  </div>
-                  <article className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {previewMd}
-                    </ReactMarkdown>
-                  </article>
-                </div>
-              ) : null}
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label className="block">
+          <span className="text-sm font-medium">Summary</span>
+          <textarea
+            className="mt-1 w-full rounded-lg border p-2 h-32"
+            value={brief.summary ?? ""}
+            onChange={(e) => setBrief({ ...brief, summary: e.target.value })}
+            onBlur={() => save({ summary: brief.summary })}
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium">Notes</span>
+          <textarea
+            className="mt-1 w-full rounded-lg border p-2 h-32"
+            value={brief.notes ?? ""}
+            onChange={(e) => setBrief({ ...brief, notes: e.target.value })}
+            onBlur={() => save({ notes: brief.notes })}
+          />
+        </label>
+      </div>
+
+      <label className="block">
+        <span className="text-sm font-medium">Status</span>
+        <select
+          className="mt-1 w-full rounded-lg border p-2"
+          value={brief.status ?? "new"}
+          onChange={(e) => {
+            const val = e.target.value as Brief["status"];
+            setBrief({ ...brief, status: val });
+            void save({ status: val });
+          }}
+        >
+          <option value="new">new</option>
+          <option value="draft">draft</option>
+          <option value="ready">ready</option>
+          <option value="archived">archived</option>
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="text-sm font-medium">Tags (comma-separated)</span>
+        <input
+          className="mt-1 w-full rounded-lg border p-2"
+          value={(brief.tags ?? []).join(", ")}
+          onChange={(e) =>
+            setBrief({
+              ...brief,
+              tags: e.target.value
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+            })
+          }
+          onBlur={() => save({ tags: brief.tags ?? [] })}
+        />
+      </label>
+
+      <div className="text-sm">
+        {saving ? <span>Saving…</span> : message ? <span className="text-green-600">{message}</span> : null}
+      </div>
     </div>
   );
 }
