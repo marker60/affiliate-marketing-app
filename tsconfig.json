@@ -1,13 +1,26 @@
-// [LABEL: FILE] tsconfig.json (essential bits)
+// [LABEL: FILE] tsconfig.json
 {
   "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+
     "baseUrl": ".",
     "paths": { "@/*": ["*"] },
-    "jsx": "preserve",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true
+
+    // 👇 ensures Set/Map iteration and spreads work even if TS needs to downlevel
+    "downlevelIteration": true
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
