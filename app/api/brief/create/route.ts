@@ -1,47 +1,35 @@
-// app/api/brief/create/route.ts
+// [LABEL: FILE] app/api/brief/create/route.ts
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/server";
+import { BriefCreate, formatZodError } from "@/lib/validation/brief";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-const BodySchema = z.object({
-  title: z.string().min(1),
-  source_url: z.string().url().nullable().optional(),
-  url: z.string().url().nullable().optional(),
-  md: z.string().optional(),
-  html_raw: z.string().optional(),
-});
 
 export async function POST(req: Request) {
   try {
     const json = await req.json();
-    const body = BodySchema.parse(json);
+    const parsed = BriefCreate.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, error: formatZodError(parsed.error) },
+        { status: 400 }
+      );
+    }
 
-    const row = {
-      title: body.title,
-      source_url: typeof body.source_url === "undefined" ? null : body.source_url,
-      url: typeof body.url === "undefined" ? null : body.url,
-      md: body.md ?? null,
-      html_raw: body.html_raw ?? null,
-    };
+    const { title, source_url, html, tags } = parsed.data;
 
-    const supabase = getSupabaseServer();
-
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("briefs")
-      .insert(row)
+      .insert([{ title, source_url: source_url ?? null, html: html ?? null, tags: tags ?? null }])
       .select("id")
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, id: data.id });
-  } catch (err: any) {
-    const msg = err?.message ?? "Unknown error";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    return NextResponse.json({ ok: true, id: data!.id });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }

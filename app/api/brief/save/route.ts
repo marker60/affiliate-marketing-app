@@ -1,65 +1,36 @@
-// app/api/brief/save/route.ts
+// [LABEL: FILE] app/api/brief/save/route.ts
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/server";
+import { BriefUpdate, formatZodError } from "@/lib/validation/brief";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-const BodySchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(1).optional(),
-  md: z.string().optional(),
-  html_raw: z.string().optional(),
-  source_url: z.string().url().nullable().optional(),
-  url: z.string().url().nullable().optional(),
-});
 
 export async function POST(req: Request) {
   try {
     const json = await req.json();
-    const body = BodySchema.parse(json);
-
-    // Build partial update only with provided fields
-    const update: Record<string, unknown> = {};
-    if (typeof body.title !== "undefined") update.title = body.title;
-    if (typeof body.md !== "undefined") update.md = body.md;
-    if (typeof body.html_raw !== "undefined") update.html_raw = body.html_raw;
-    if (typeof body.source_url !== "undefined") update.source_url = body.source_url;
-    if (typeof body.url !== "undefined") update.url = body.url;
-
-    if (Object.keys(update).length === 0) {
+    const parsed = BriefUpdate.safeParse(json);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Nothing to update" },
+        { ok: false, error: formatZodError(parsed.error) },
         { status: 400 }
       );
     }
 
-    const supabase = getSupabaseServer();
+    const { id, ...rest } = parsed.data;
 
-    // Do the update; do not force .single() to avoid the “Cannot coerce…” error
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("briefs")
-      .update(update)
-      .eq("id", body.id)
+      .update(rest)
+      .eq("id", id)
       .select("id")
-      .maybeSingle();
+      .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    // If RLS prevented the update or the row didn’t exist, data may be null
-    if (!data) {
-      return NextResponse.json(
-        { ok: false, id: body.id, note: "No row updated (check RLS / id)" },
-        { status: 200 }
-      );
-    }
-
-    return NextResponse.json({ ok: true, id: data.id });
-  } catch (err: any) {
-    const msg = err?.message ?? "Unknown error";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    return NextResponse.json({ ok: true, id: data!.id });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
