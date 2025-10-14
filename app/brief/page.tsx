@@ -1,93 +1,159 @@
-import Link from "next/link";
+// [LABEL: FILE] app/brief/page.tsx
+"use client";
 
-type BriefRow = {
+import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+type BriefListItem = {
   id: string;
-  created_at: string | null;
   title: string;
-  source_url: string | null;
-  // url is optional; API may not return it yet
-  url?: string | null;
+  status: "new" | "draft" | "ready" | "archived";
+  updated_at: string;
+  created_at: string;
+  source_url?: string | null;
+  tags?: string[] | null;
 };
 
-export const dynamic = "force-dynamic";
+export default function BriefListPage() {
+  const [items, setItems] = React.useState<BriefListItem[]>([]);
+  const [filtered, setFiltered] = React.useState<BriefListItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [q, setQ] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
+  const router = useRouter();
 
-async function getBriefs(): Promise<{ rows: BriefRow[]; error?: string }> {
-  try {
-    const base = process.env.NEXT_PUBLIC_BASE_URL ?? "";
-    const res = await fetch(`${base}/api/brief/list`, { cache: "no-store" });
-
-    // If API failed, try to read the error body and surface it, but don’t crash
-    if (!res.ok) {
-      let msg = `HTTP ${res.status}`;
+  React.useEffect(() => {
+    (async () => {
       try {
-        const j = await res.json();
-        if (j?.error) msg = j.error;
-      } catch {}
-      return { rows: [], error: msg };
+        const res = await fetch("/api/brief/list", { cache: "no-store" });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error ?? "Failed to load");
+        setItems(json.items as BriefListItem[]);
+        setFiltered(json.items as BriefListItem[]);
+      } catch (e: any) {
+        setError(e?.message ?? "Failed to load");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    const term = q.toLowerCase().trim();
+    if (!term) {
+      setFiltered(items);
+      return;
     }
+    setFiltered(
+      items.filter((it) => {
+        const hay = [
+          it.title,
+          it.status,
+          it.source_url ?? "",
+          ...(it.tags ?? []),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(term);
+      })
+    );
+  }, [q, items]);
 
-    const json = await res.json();
-    return { rows: (json?.data as BriefRow[]) ?? [] };
-  } catch (e: any) {
-    return { rows: [], error: e?.message ?? "Failed to load" };
+  async function createBrief() {
+    try {
+      setCreating(true);
+      const title = `Untitled ${new Date().toLocaleString()}`;
+      const res = await fetch("/api/brief/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "Create failed");
+      router.push(`/brief/${json.id}`);
+    } catch (e: any) {
+      setError(e?.message ?? "Create failed");
+    } finally {
+      setCreating(false);
+    }
   }
-}
 
-export default async function BriefsPage() {
-  const { rows, error } = await getBriefs();
+  if (loading) return <div className="p-6">Loading…</div>;
+  if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Briefs</h1>
-        <Link className="px-3 py-2 rounded bg-green-600 hover:bg-green-500" href="/brief/new">
-          New Brief
-        </Link>
+    <div className="max-w-5xl mx-auto p-6 space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <h1 className="text-2xl font-semibold">Briefs</h1>
+        <div className="flex gap-2">
+          <input
+            placeholder="Search title, tags, status…"
+            className="w-64 rounded-lg border px-3 py-2 text-sm"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button
+            onClick={createBrief}
+            disabled={creating}
+            className="rounded-lg border px-3 py-2 text-sm font-medium hover:bg-gray-50"
+          >
+            {creating ? "Creating…" : "New Brief"}
+          </button>
+        </div>
       </div>
 
-      {error && (
-        <div className="text-red-400">
-          Error: {error}
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {rows.map((r) => {
-          const source = r.source_url || r.url || undefined;
-          return (
-            <div key={r.id} className="rounded border border-zinc-800 p-4 flex flex-col gap-2">
-              <div className="text-xs text-zinc-400">
-                {new Date(r.created_at ?? Date.now()).toLocaleString()} · {r.id.slice(0, 8)}…
-              </div>
-
-              <Link href={`/brief/${r.id}`} className="text-lg font-semibold hover:underline">
-                {r.title}
-              </Link>
-
-              <div className="flex items-center gap-3">
-                {source ? (
-                  <a
-                    href={source}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline"
-                  >
-                    Open original
-                  </a>
-                ) : (
-                  <span className="text-zinc-500">No source URL</span>
-                )}
-                {/* Delete action can be wired later */}
-              </div>
-            </div>
-          );
-        })}
-
-        {rows.length === 0 && !error && (
-          <div className="text-zinc-400">
-            No briefs yet. Create one from <Link className="underline" href="/brief/new">/brief/new</Link>.
-          </div>
-        )}
+      <div className="rounded-lg border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr className="text-left">
+              <th className="p-3">Title</th>
+              <th className="p-3">Status</th>
+              <th className="p-3">Updated</th>
+              <th className="p-3">Tags</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="p-4 text-gray-500">
+                  No briefs yet.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((b) => (
+                <tr key={b.id} className="border-t hover:bg-gray-50">
+                  <td className="p-3">
+                    <Link
+                      href={`/brief/${b.id}`}
+                      className="underline underline-offset-2"
+                    >
+                      {b.title || "(untitled)"}
+                    </Link>
+                    {b.source_url ? (
+                      <a
+                        href={b.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ml-2 text-xs text-gray-500 hover:underline"
+                      >
+                        source ↗
+                      </a>
+                    ) : null}
+                  </td>
+                  <td className="p-3">{b.status}</td>
+                  <td className="p-3">
+                    {new Date(b.updated_at).toLocaleString()}
+                  </td>
+                  <td className="p-3">
+                    {(b.tags ?? []).join(", ")}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
