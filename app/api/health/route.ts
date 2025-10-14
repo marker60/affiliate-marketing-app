@@ -8,17 +8,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const started = Date.now();
   const checks: Record<string, unknown> = {};
-
-  // Basic env info (safe for exposure)
   const env = {
     vercel: !!process.env.VERCEL,
-    vercelEnv: process.env.VERCEL_ENV ?? null,          // "production" | "preview" | "development"
-    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,  // short SHA if present
+    vercelEnv: process.env.VERCEL_ENV ?? null,
+    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
   };
-
   let status = 200;
 
-  // Supabase ping (very light SELECT)
   try {
     const supa = getSupabaseServer();
     const { error } = await supa.from("briefs").select("id").limit(1);
@@ -30,12 +26,7 @@ export async function GET() {
   }
 
   return NextResponse.json(
-    {
-      ok: status === 200,
-      uptime_ms: Date.now() - started,
-      env,
-      checks,
-    },
+    { ok: status === 200, uptime_ms: Date.now() - started, env, checks },
     { status }
   );
 }
