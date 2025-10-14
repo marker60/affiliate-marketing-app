@@ -1,27 +1,41 @@
-// app/api/health/route.ts
+// [LABEL: FILE] app/api/health/route.ts
 import { NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const hasUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const hasAnon = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const started = Date.now();
+  const checks: Record<string, unknown> = {};
 
-  // Keep it safe: never echo values. Just booleans + a tiny hint.
-  const urlHost = (() => {
-    try {
-      return hasUrl ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL as string).host : null;
-    } catch {
-      return "INVALID_URL";
-    }
-  })();
+  // Basic env info (safe for exposure)
+  const env = {
+    vercel: !!process.env.VERCEL,
+    vercelEnv: process.env.VERCEL_ENV ?? null,          // "production" | "preview" | "development"
+    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,  // short SHA if present
+  };
 
-  return NextResponse.json({
-    ok: true,
-    env: {
-      NEXT_PUBLIC_SUPABASE_URL: hasUrl,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: hasAnon,
-      urlHost,
+  let status = 200;
+
+  // Supabase ping (very light SELECT)
+  try {
+    const supa = getSupabaseServer();
+    const { error } = await supa.from("briefs").select("id").limit(1);
+    checks.supabase = error ? { ok: false, error: error.message } : { ok: true };
+    if (error) status = 503;
+  } catch (e: any) {
+    checks.supabase = { ok: false, error: e?.message ?? "unknown" };
+    status = 503;
+  }
+
+  return NextResponse.json(
+    {
+      ok: status === 200,
+      uptime_ms: Date.now() - started,
+      env,
+      checks,
     },
-    note:
-      "If either flag is false in Production, set env vars in Vercel → Project → Settings → Environment Variables (Production) and redeploy.",
-  });
+    { status }
+  );
 }
