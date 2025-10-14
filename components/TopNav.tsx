@@ -19,6 +19,7 @@ export default function TopNav() {
           <Link href="/" className="text-sm font-semibold tracking-tight">App</Link>
           <nav className="ml-2 flex gap-1">
             <Link href="/brief" className={`px-3 py-2 rounded-lg text-sm ${active("/brief")}`}>Briefs</Link>
+		<Link href="/links" className={`px-3 py-2 rounded-lg text-sm ${active("/links")}`}>Links</Link>
           </nav>
         </div>
         <nav className="flex gap-2">
