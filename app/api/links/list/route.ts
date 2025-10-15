@@ -16,7 +16,7 @@ export async function GET() {
 
     if (error) throw error;
 
-    // 2) Get click rows (we’ll aggregate in memory)
+    // 2) Get click rows (aggregate in memory)
     const { data: clicks, error: clickErr } = await supabaseAdmin
       .from("public.clicks")
       .select("link_id");
