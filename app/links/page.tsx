@@ -32,6 +32,7 @@ export default function LinksPage() {
   const [items, setItems] = React.useState<LinkItem[]>([]);
   const [q, setQ] = React.useState("");
   const [creating, setCreating] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
   const [url, setUrl] = React.useState("");
   const [title, setTitle] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -43,15 +44,22 @@ export default function LinksPage() {
       ? ""
       : `${window.location.protocol}//${window.location.host}`;
 
-  async function load() {
+  const load = React.useCallback(async () => {
+    setLoading(true);
     setError(null);
-    const res = await fetch("/api/links/list", { cache: "no-store" });
-    const json = await res.json();
-    if (!json.ok) { setError(json.error || "Failed to load"); return; }
-    setItems(json.items);
-  }
+    try {
+      const res = await fetch("/api/links/list", { cache: "no-store" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Failed to load");
+      setItems(json.items);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  React.useEffect(() => { void load(); }, []);
+  React.useEffect(() => { void load(); }, [load]);
 
   const filtered = React.useMemo(() => {
     const term = q.toLowerCase().trim();
@@ -111,12 +119,25 @@ export default function LinksPage() {
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h1 className="text-2xl font-semibold">Links</h1>
-        <input
-          placeholder="Search title, slug, destination, tags…"
-          className="w-full md:w-80 rounded-lg border px-3 py-2 text-sm"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            placeholder="Search title, slug, destination, tags…"
+            className="w-56 md:w-80 rounded-lg border px-3 py-2 text-sm"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="rounded-lg border px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900 disabled:opacity-60"
+            aria-busy={loading}
+            aria-label="Refresh list"
+            title="Refresh list"
+          >
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       <form onSubmit={createLink} className="rounded-lg border p-4 space-y-3">
@@ -168,7 +189,7 @@ export default function LinksPage() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={6} className="p-4 text-gray-500">
-                  No links yet. Create your first link above.
+                  {loading ? "Loading…" : "No links yet. Create your first link above."}
                 </td>
               </tr>
             ) : (
