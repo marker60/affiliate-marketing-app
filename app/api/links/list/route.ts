@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // 1) Get latest links directly from the base table (schema-qualified)
+    // 1) Get latest links (table name only; Supabase uses the default 'public' schema)
     const { data: links, error } = await supabaseAdmin
-      .from("public.links")
+      .from("links")
       .select("id, slug, title, destination_url, tags, created_at, updated_at")
       .order("created_at", { ascending: false })
       .limit(200);
@@ -18,7 +18,7 @@ export async function GET() {
 
     // 2) Get click rows (aggregate in memory)
     const { data: clicks, error: clickErr } = await supabaseAdmin
-      .from("public.clicks")
+      .from("clicks")
       .select("link_id");
     if (clickErr) throw clickErr;
 
