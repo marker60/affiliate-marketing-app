@@ -1,32 +1,59 @@
 // [LABEL: FILE] app/api/health/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(_req: Request) {
   const started = Date.now();
-  const checks: Record<string, unknown> = {};
+
+  // --- Supabase quick check: head-only count on links (fast, low-cost)
+  const checks: {
+    supabase: { ok: boolean; count: number | null; error: string | null };
+  } = { supabase: { ok: false, count: null, error: null } };
+
+  try {
+    const { error, count } = await supabaseAdmin
+      .from("links")
+      .select("id", { count: "exact", head: true });
+    if (error) {
+      checks.supabase.error = error.message ?? String(error);
+    } else {
+      checks.supabase.ok = true;
+      checks.supabase.count = count ?? null;
+    }
+  } catch (e: any) {
+    checks.supabase.error = e?.message ?? "unknown error";
+  }
+
+  // --- Environment snapshot (booleans, never exposing secret values)
   const env = {
     vercel: !!process.env.VERCEL,
     vercelEnv: process.env.VERCEL_ENV ?? null,
     commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-  };
-  let status = 200;
 
-  try {
-    const supa = getSupabaseServer();
-    const { error } = await supa.from("briefs").select("id").limit(1);
-    checks.supabase = error ? { ok: false, error: error.message } : { ok: true };
-    if (error) status = 503;
-  } catch (e: any) {
-    checks.supabase = { ok: false, error: e?.message ?? "unknown" };
-    status = 503;
-  }
+    // presence flags only (no secrets echoed)
+    NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    LINK_IP_HASH_SECRET: !!process.env.LINK_IP_HASH_SECRET,
+
+    // helpful: which Supabase project this deployment is pointed at
+    supabaseRef: process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split(".")[0]
+      : null,
+  };
+
+  const status = checks.supabase.ok ? 200 : 500;
 
   return NextResponse.json(
-    { ok: status === 200, uptime_ms: Date.now() - started, env, checks },
+    {
+      ok: status === 200,
+      uptime_ms: Date.now() - started,
+      env,
+      checks,
+    },
     { status }
   );
 }
