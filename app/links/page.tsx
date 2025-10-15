@@ -14,6 +14,20 @@ type LinkItem = {
   click_count: number;
 };
 
+function useToast(timeoutMs = 1600) {
+  const [msg, setMsg] = React.useState<string | null>(null);
+  const hideRef = React.useRef<number | null>(null);
+
+  const show = React.useCallback((text: string) => {
+    setMsg(text);
+    if (hideRef.current) window.clearTimeout(hideRef.current);
+    hideRef.current = window.setTimeout(() => setMsg(null), timeoutMs);
+  }, [timeoutMs]);
+
+  React.useEffect(() => () => { if (hideRef.current) window.clearTimeout(hideRef.current); }, []);
+  return { msg, show };
+}
+
 export default function LinksPage() {
   const [items, setItems] = React.useState<LinkItem[]>([]);
   const [q, setQ] = React.useState("");
@@ -22,6 +36,12 @@ export default function LinksPage() {
   const [title, setTitle] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<string | null>(null);
+  const { msg: toastMsg, show: toast } = useToast();
+
+  const origin =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.protocol}//${window.location.host}`;
 
   async function load() {
     setError(null);
@@ -30,6 +50,7 @@ export default function LinksPage() {
     if (!json.ok) { setError(json.error || "Failed to load"); return; }
     setItems(json.items);
   }
+
   React.useEffect(() => { void load(); }, []);
 
   const filtered = React.useMemo(() => {
@@ -61,12 +82,33 @@ export default function LinksPage() {
       setError(e?.message ?? "Create failed");
     } finally {
       setCreating(false);
-      setTimeout(() => setMessage(null), 2000);
+      window.setTimeout(() => setMessage(null), 1800);
+    }
+  }
+
+  async function copyShort(slug: string) {
+    try {
+      const shortUrl = origin ? `${origin}/l/${slug}` : `/l/${slug}`;
+      await navigator.clipboard.writeText(shortUrl);
+      toast("Copied!");
+    } catch {
+      toast("Copy failed");
     }
   }
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
+      {/* Toast */}
+      {toastMsg && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 top-4 z-50 rounded-lg border bg-white px-3 py-2 text-sm shadow-md dark:bg-gray-900"
+        >
+          {toastMsg}
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h1 className="text-2xl font-semibold">Links</h1>
         <input
@@ -102,7 +144,7 @@ export default function LinksPage() {
         <button
           type="submit"
           disabled={creating}
-          className="rounded-lg border px-3 py-2 text-sm font-medium hover:bg-gray-50"
+          className="rounded-lg border px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900"
         >
           {creating ? "Creating…" : "Create Link"}
         </button>
@@ -112,26 +154,54 @@ export default function LinksPage() {
 
       <div className="rounded-lg border overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 dark:bg-gray-950/50">
             <tr className="text-left">
               <th className="p-3">Title</th>
               <th className="p-3">Slug</th>
               <th className="p-3">Clicks</th>
               <th className="p-3">Destination</th>
               <th className="p-3">Created</th>
+              <th className="p-3 sr-only">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={5} className="p-4 text-gray-500">No links yet.</td></tr>
+              <tr>
+                <td colSpan={6} className="p-4 text-gray-500">
+                  No links yet. Create your first link above.
+                </td>
+              </tr>
             ) : (
               filtered.map((l) => (
-                <tr key={l.id} className="border-t hover:bg-gray-50">
+                <tr key={l.id} className="border-t hover:bg-gray-50 dark:hover:bg-gray-950/50">
                   <td className="p-3">{l.title || "(untitled)"}</td>
-                  <td className="p-3"><code>/l/{l.slug}</code></td>
+
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <code className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-900">/l/{l.slug}</code>
+                      {/* Click badge */}
+                      <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
+                        {l.click_count} clicks
+                      </span>
+                    </div>
+                  </td>
+
                   <td className="p-3">{l.click_count}</td>
+
                   <td className="p-3 truncate max-w-[280px]">{l.destination_url}</td>
+
                   <td className="p-3">{new Date(l.created_at).toLocaleString()}</td>
+
+                  <td className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => copyShort(l.slug)}
+                      className="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-900"
+                      aria-label={`Copy short URL for ${l.slug}`}
+                    >
+                      Copy
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
