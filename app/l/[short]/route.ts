@@ -1,4 +1,3 @@
-// app/l/[short]/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -20,11 +19,6 @@ export async function GET(req: Request, { params }: { params:{ short:string } })
 
   if (error || !data) return new NextResponse("Not found", { status:404 });
 
-  await supabase
-    .from("links")
-    .update({ clicks:(data.clicks??0)+1, last_click_at:new Date().toISOString() })
-    .eq("id", data.id);
-
-  // redirect to destination_url
+  await supabase.from("links").update({ clicks:(data.clicks??0)+1, last_click_at:new Date().toISOString() }).eq("id", data.id);
   return NextResponse.redirect(data.destination_url, { status:302 });
 }

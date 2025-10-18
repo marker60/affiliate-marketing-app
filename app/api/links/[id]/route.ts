@@ -1,8 +1,6 @@
-// app/api/links/[id]/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const isHttp = (u:string)=>/^https?:\/\//i.test(u);
+const isHttp=(u:string)=>/^https?:\/\//i.test(u);
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const id = String(params?.id || "").trim();
@@ -20,13 +18,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const { data, error } = await supabase
     .from("links")
-    .update({ destination_url: dest_url }) // write to destination_url
+    .update({ destination_url: dest_url })
     .eq("id", id)
     .select("id, brief_id, destination_url, short_id, slug, clicks, last_click_at, created_at")
     .single();
 
   if (error) return NextResponse.json({ ok:false, error:error.message }, { status:500 });
-
   const item = { ...data, dest_url: data.destination_url };
   return NextResponse.json({ ok:true, item });
 }

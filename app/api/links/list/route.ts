@@ -1,4 +1,3 @@
-// app/api/links/list/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -19,8 +18,6 @@ export async function GET(req: Request) {
     .order("created_at", { ascending:false });
 
   if (error) return NextResponse.json({ ok:false, error:error.message }, { status:500 });
-
-  // Map to include dest_url for UI
   const items = (data ?? []).map(r => ({ ...r, dest_url: r.destination_url }));
   return NextResponse.json({ ok:true, items });
 }
