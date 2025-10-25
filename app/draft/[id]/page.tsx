@@ -1,4 +1,4 @@
-// app/draft/[id]/page.tsx
+// /app/draft/[id]/page.tsx
 import { createClient } from "@/lib/supabase/server";
 
 type PageProps = { params: { id: string } };
